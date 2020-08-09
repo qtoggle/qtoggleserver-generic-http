@@ -80,7 +80,7 @@ ports = [
                 write = {
                     ...  # overrides to common write details above
                 }
-            },
+            }
             ...
         }
     }
