@@ -15,7 +15,7 @@ Install using pip:
 ## Usage
 
 ##### `qtoggleserver.conf:`
-``` javascript
+``` ini
 ...
 ports = [
     ...
