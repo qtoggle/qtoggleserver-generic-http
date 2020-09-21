@@ -45,7 +45,7 @@ class GenericHTTPClient(polled.PolledPeripheral):
         self.last_response_json: Optional[Any] = None
         self.last_response_headers: Optional[Dict[str, Any]] = None
 
-        self._j2env: jinja2.nativetypes.NativeEnvironment = jinja2.nativetypes.NativeEnvironment()
+        self._j2env: jinja2.nativetypes.NativeEnvironment = jinja2.nativetypes.NativeEnvironment(enable_async=True)
         self._j2env.globals.update(__builtins__)
 
         super().__init__(**kwargs)
@@ -67,7 +67,8 @@ class GenericHTTPClient(polled.PolledPeripheral):
         self.debug('read request %s %s', self.read_details['method'], self.read_details['url'])
 
         async with aiohttp.ClientSession() as session:
-            async with session.request(**self.prepare_request(self.read_details, {})) as response:
+            request_params = await self.prepare_request(self.read_details, {})
+            async with session.request(**request_params) as response:
                 data = await response.read()
 
                 self.last_response_body = data.decode()
@@ -94,10 +95,11 @@ class GenericHTTPClient(polled.PolledPeripheral):
 
         self.debug('write request %s %s', details['method'], details['url'])
 
-        context = dict(context, **self.get_placeholders_context(port))
+        context = dict(context, **(await self.get_placeholders_context(port)))
 
         async with aiohttp.ClientSession() as session:
-            async with session.request(**self.prepare_request(details, context)) as response:
+            request_params = await self.prepare_request(details, context)
+            async with session.request(**request_params) as response:
                 try:
                     await response.read()
 
@@ -106,11 +108,11 @@ class GenericHTTPClient(polled.PolledPeripheral):
 
         await self.poll()
 
-    def prepare_request(self, details: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+    async def prepare_request(self, details: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         headers = details.get('headers', {})
         request_body = details.get('request_body')
         if request_body is not None:
-            request_body = self.replace_placeholders_rec(request_body, context)
+            request_body = await self.replace_placeholders_rec(request_body, context)
 
         if request_body is not None and not isinstance(request_body, str):  # Assuming JSON body
             request_body = json_utils.dumps(request_body)
@@ -122,19 +124,19 @@ class GenericHTTPClient(polled.PolledPeripheral):
 
         d = {
             'method': details['method'],
-            'url': self.replace_placeholders_rec(details['url'], context),
+            'url': await self.replace_placeholders_rec(details['url'], context),
             'ssl': not self.ignore_invalid_cert,
             'timeout': self.timeout
         }
 
         if 'params' in details:
-            d['params'] = self.replace_placeholders_rec(details['params'], context)
+            d['params'] = await self.replace_placeholders_rec(details['params'], context)
 
         if headers:
-            d['headers'] = self.replace_placeholders_rec(headers, context)
+            d['headers'] = await self.replace_placeholders_rec(headers, context)
 
         if 'cookies' in details:
-            d['cookies'] = self.replace_placeholders_rec(details['cookies'], context)
+            d['cookies'] = await self.replace_placeholders_rec(details['cookies'], context)
 
         if request_body is not None:
             d['data'] = request_body
@@ -144,28 +146,28 @@ class GenericHTTPClient(polled.PolledPeripheral):
 
         return d
 
-    def get_placeholders_context(self, port: core_ports.BasePort) -> Dict[str, Any]:
+    async def get_placeholders_context(self, port: core_ports.BasePort) -> Dict[str, Any]:
         context = {
             'port': port,
             'value': port.get_value(),
-            'attrs': port.get_attrs_sync()
+            'attrs': await port.get_attrs()
         }
 
         return context
 
-    def replace_placeholders_rec(self, obj: Any, context: Dict[str, Any]) -> Any:
+    async def replace_placeholders_rec(self, obj: Any, context: Dict[str, Any]) -> Any:
         if isinstance(obj, dict):
             return {
-                self.replace_placeholders_rec(k, context): self.replace_placeholders_rec(v, context)
+                await self.replace_placeholders_rec(k, context): await self.replace_placeholders_rec(v, context)
                 for k, v in obj.items()
             }
 
         elif isinstance(obj, list):
-            return [self.replace_placeholders_rec(e, context) for e in obj]
+            return [await self.replace_placeholders_rec(e, context) for e in obj]
 
         elif isinstance(obj, str):
             template = self._j2env.from_string(obj)
-            return template.render(context)
+            return await template.render_async(context)
 
         else:
             return obj
