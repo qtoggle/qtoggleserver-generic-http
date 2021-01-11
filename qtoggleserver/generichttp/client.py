@@ -149,7 +149,7 @@ class GenericHTTPClient(polled.PolledPeripheral):
     async def get_placeholders_context(self, port: core_ports.BasePort) -> Dict[str, Any]:
         context = {
             'port': port,
-            'value': port.get_value(),
+            'value': port.get_last_read_value(),
             'attrs': await port.get_attrs()
         }
 
