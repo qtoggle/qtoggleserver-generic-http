@@ -17,7 +17,7 @@ Install using pip:
 ##### `qtoggleserver.conf:`
 ``` ini
 ...
-ports = [
+peripherals = [
     ...
     {
         driver = "qtoggleserver.generichttp.GenericHTTPClient"
