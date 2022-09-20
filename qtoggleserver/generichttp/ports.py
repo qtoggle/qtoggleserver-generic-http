@@ -1,7 +1,7 @@
 
 import re
 
-from typing import Any, cast, Dict, Optional, List
+from typing import Any, cast, Optional, List
 
 import jsonpointer
 
@@ -19,8 +19,8 @@ class GenericHTTPPort(polled.PolledPort):
         id: str,
         type: str = core_ports.TYPE_BOOLEAN,
         writable: bool = False,
-        read: Dict[str, Any],
-        write: Optional[Dict[str, Any]] = None,
+        read: dict[str, Any],
+        write: Optional[dict[str, Any]] = None,
         **kwargs
     ) -> None:
 
@@ -28,7 +28,7 @@ class GenericHTTPPort(polled.PolledPort):
         self._type = type
         self._writable = writable
 
-        self._write_details: Dict[str, Any] = write or {}
+        self._write_details: dict[str, Any] = write or {}
 
         json_path = read.get('json_path')
         body_regex = read.get('body_regex')
@@ -36,7 +36,7 @@ class GenericHTTPPort(polled.PolledPort):
 
         self._json_path: Optional[str] = json_path
         self._body_regex: Optional[re.Pattern] = re.compile(body_regex) if body_regex else None
-        self._true_values: List[Any] = true_value if isinstance(true_value, list) else [true_value]
+        self._true_values: list[Any] = true_value if isinstance(true_value, list) else [true_value]
 
         super().__init__(id=id, **kwargs)
 

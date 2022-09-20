@@ -1,5 +1,5 @@
 
-from typing import Any, Dict, Optional, List, Type, Union
+from typing import Any, Optional, Union
 
 import aiohttp
 import jinja2.nativetypes
@@ -16,41 +16,41 @@ class GenericHTTPClient(polled.PolledPeripheral):
     def __init__(
         self,
         *,
-        read: Dict[str, Any],
-        write: Optional[Dict[str, Any]] = None,
-        auth: Optional[Dict[str, Any]] = None,
+        read: dict[str, Any],
+        write: Optional[dict[str, Any]] = None,
+        auth: Optional[dict[str, Any]] = None,
         ignore_response_code: bool = False,
         ignore_invalid_cert: bool = False,
         timeout: int = DEFAULT_TIMEOUT,
-        ports: Dict[str, Dict[str, Any]],
+        ports: dict[str, dict[str, Any]],
         **kwargs
     ) -> None:
 
-        self.read_details: Dict[str, Any] = read
+        self.read_details: dict[str, Any] = read
         self.read_details.setdefault('method', 'GET')
 
-        self.write_details: Dict[str, Any] = write or {}
+        self.write_details: dict[str, Any] = write or {}
         self.write_details.setdefault('url', self.read_details.get('url'))
         self.write_details.setdefault('method', 'POST')
 
-        self.auth: Dict[str, str] = auth or {}
+        self.auth: dict[str, str] = auth or {}
         self.auth.setdefault('type', 'none')
         self.ignore_response_code: bool = ignore_response_code
         self.ignore_invalid_cert: bool = ignore_invalid_cert
         self.timeout: int = timeout
-        self.port_details: Dict[str, Dict[str, Any]] = ports
+        self.port_details: dict[str, dict[str, Any]] = ports
 
         self.last_response_status: Optional[int] = None
         self.last_response_body: Optional[str] = None
         self.last_response_json: Optional[Any] = None
-        self.last_response_headers: Optional[Dict[str, Any]] = None
+        self.last_response_headers: Optional[dict[str, Any]] = None
 
         self._j2env: jinja2.nativetypes.NativeEnvironment = jinja2.nativetypes.NativeEnvironment(enable_async=True)
         self._j2env.globals.update(__builtins__)
 
         super().__init__(**kwargs)
 
-    async def make_port_args(self) -> List[Union[Dict[str, Any], Type[core_ports.BasePort]]]:
+    async def make_port_args(self) -> list[Union[dict[str, Any], type[core_ports.BasePort]]]:
         from .ports import GenericHTTPPort
 
         port_args = []
@@ -85,8 +85,8 @@ class GenericHTTPClient(polled.PolledPeripheral):
     async def write_port_value(
         self,
         port: core_ports.BasePort,
-        request_details: Dict[str, Any],
-        context: Dict[str, Any]
+        request_details: dict[str, Any],
+        context: dict[str, Any]
     ) -> None:
 
         details = request_details
@@ -108,7 +108,7 @@ class GenericHTTPClient(polled.PolledPeripheral):
 
         await self.poll()
 
-    async def prepare_request(self, details: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+    async def prepare_request(self, details: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         headers = details.get('headers', {})
         request_body = details.get('request_body')
         if request_body is not None:
@@ -146,7 +146,7 @@ class GenericHTTPClient(polled.PolledPeripheral):
 
         return d
 
-    async def get_placeholders_context(self, port: core_ports.BasePort) -> Dict[str, Any]:
+    async def get_placeholders_context(self, port: core_ports.BasePort) -> dict[str, Any]:
         context = {
             'port': port,
             'value': port.get_last_read_value(),
@@ -155,7 +155,7 @@ class GenericHTTPClient(polled.PolledPeripheral):
 
         return context
 
-    async def replace_placeholders_rec(self, obj: Any, context: Dict[str, Any]) -> Any:
+    async def replace_placeholders_rec(self, obj: Any, context: dict[str, Any]) -> Any:
         if isinstance(obj, dict):
             return {
                 await self.replace_placeholders_rec(k, context): await self.replace_placeholders_rec(v, context)
