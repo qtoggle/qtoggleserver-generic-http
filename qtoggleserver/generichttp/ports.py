@@ -1,7 +1,6 @@
-
 import re
 
-from typing import Any, cast, Optional, List
+from typing import Any, cast, Optional
 
 import jsonpointer
 
