@@ -77,7 +77,6 @@ class GenericHTTPClient(polled.PolledPeripheral):
                 # Attempt to decode JSON but don't worry at all if that is not possible
                 try:
                     self.last_response_json = json_utils.loads(self.last_response_body)
-
                 except Exception:
                     self.last_response_json = None
 
@@ -101,7 +100,6 @@ class GenericHTTPClient(polled.PolledPeripheral):
             async with session.request(**request_params) as response:
                 try:
                     await response.read()
-
                 except Exception as e:
                     self.error('write request failed: %s', e, exc_info=True)
 

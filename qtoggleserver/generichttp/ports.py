@@ -66,7 +66,6 @@ class GenericHTTPPort(polled.PolledPort):
 
             try:
                 raw_value = match.group(1)
-
             except IndexError:
                 raw_value = match.group()
 
@@ -76,21 +75,17 @@ class GenericHTTPPort(polled.PolledPort):
 
         if self._type == core_ports.TYPE_BOOLEAN:
             return raw_value in self._true_values
-
         else:
             if isinstance(raw_value, bool):
                 return int(raw_value)
-
             elif isinstance(raw_value, str):
                 raw_value = raw_value.strip()
 
                 try:
                     return int(raw_value)
-
                 except ValueError:
                     try:
                         return float(raw_value)
-
                     except ValueError:
                         pass
 
