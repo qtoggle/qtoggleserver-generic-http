@@ -8,7 +8,7 @@ from qtoggleserver.lib import polled
 from qtoggleserver.utils import json as json_utils
 
 
-DEFAULT_TIMEOUT = 10  # Seconds
+DEFAULT_TIMEOUT = 10  # seconds
 
 
 class GenericHTTPClient(polled.PolledPeripheral):
@@ -111,7 +111,7 @@ class GenericHTTPClient(polled.PolledPeripheral):
         if request_body is not None:
             request_body = await self.replace_placeholders_rec(request_body, context)
 
-        if request_body is not None and not isinstance(request_body, str):  # Assuming JSON body
+        if request_body is not None and not isinstance(request_body, str):  # assuming JSON body
             request_body = json_utils.dumps(request_body)
             headers.setdefault('Content-Type', 'application/json')
 
@@ -158,13 +158,10 @@ class GenericHTTPClient(polled.PolledPeripheral):
                 await self.replace_placeholders_rec(k, context): await self.replace_placeholders_rec(v, context)
                 for k, v in obj.items()
             }
-
         elif isinstance(obj, list):
             return [await self.replace_placeholders_rec(e, context) for e in obj]
-
         elif isinstance(obj, str):
             template = self._j2env.from_string(obj)
             return await template.render_async(context)
-
         else:
             return obj

@@ -53,7 +53,7 @@ class GenericHTTPPort(polled.PolledPort):
 
         # JSON pointer lookup
         if self._json_path:
-            if client.last_response_json is None:  # Not a JSON response
+            if client.last_response_json is None:  # not a JSON response
                 return
 
             raw_value = jsonpointer.resolve_pointer(client.last_response_json, self._json_path)
@@ -88,7 +88,6 @@ class GenericHTTPPort(polled.PolledPort):
                         return float(raw_value)
                     except ValueError:
                         pass
-
             elif isinstance(raw_value, (int, float)):
                 return raw_value
 
