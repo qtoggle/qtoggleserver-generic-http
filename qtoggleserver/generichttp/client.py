@@ -1,3 +1,5 @@
+import logging
+
 from typing import Any, Optional, Union
 
 import aiohttp
@@ -12,6 +14,8 @@ DEFAULT_TIMEOUT = 10  # seconds
 
 
 class GenericHTTPClient(polled.PolledPeripheral):
+    logger = logging.getLogger(__name__)
+
     def __init__(
         self,
         *,
