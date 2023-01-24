@@ -80,12 +80,16 @@ class GenericHTTPPort(polled.PolledPort):
                 return int(raw_value)
             elif isinstance(raw_value, str):
                 raw_value = raw_value.strip()
+                factor = 1
+                if raw_value.endswith('%'):
+                    raw_value = raw_value.strip('%')
+                    factor = 0.01
 
                 try:
-                    return int(raw_value)
+                    return int(raw_value) * factor
                 except ValueError:
                     try:
-                        return float(raw_value)
+                        return float(raw_value) * factor
                     except ValueError:
                         pass
             elif isinstance(raw_value, (int, float)):
