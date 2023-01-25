@@ -56,7 +56,11 @@ class GenericHTTPPort(polled.PolledPort):
             if client.last_response_json is None:  # not a JSON response
                 return
 
-            raw_value = jsonpointer.resolve_pointer(client.last_response_json, self._json_path)
+            try:
+                raw_value = jsonpointer.resolve_pointer(client.last_response_json, self._json_path)
+            except jsonpointer.JsonPointerException:
+                # Return value unavailable when JSON pointer cannot be resolved instead of propagating the exception
+                return
 
         # Regex pattern match
         elif self._body_regex:
