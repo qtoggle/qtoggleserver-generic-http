@@ -80,12 +80,12 @@ class GenericHTTPPort(polled.PolledPort):
             raw_value = client.last_response_status < 300
 
         if self._type == core_ports.TYPE_BOOLEAN:
-            if raw_value in self._true_values:
-                return True
-            elif raw_value in self._false_values:
-                return False
+            if self._true_values:
+                return raw_value in self._true_values
+            elif self._false_values:
+                return raw_value not in self._false_values
             else:
-                return
+                return bool(raw_value)
         else:
             if isinstance(raw_value, bool):
                 return int(raw_value)
