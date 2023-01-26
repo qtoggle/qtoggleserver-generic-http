@@ -76,6 +76,7 @@ peripherals = [
                     json_path = "/path/to/field"  # RFC6901 JSON pointer to port value, inside response body
                     body_regex = "myvalue=(\d+)"  # regular expression inside body for port value lookup
                     true_value = 1                # value or list of values that are true (for boolean ports)
+                    false_value = 1               # value or list of values that are false (for boolean ports)
                 }
                 write = {
                     ...  # overrides to common write details above

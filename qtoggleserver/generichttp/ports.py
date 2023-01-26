@@ -32,10 +32,12 @@ class GenericHTTPPort(polled.PolledPort):
         json_path = read.get('json_path')
         body_regex = read.get('body_regex')
         true_value = read.get('true_value', True)
+        false_value = read.get('false_value', False)
 
         self._json_path: Optional[str] = json_path
         self._body_regex: Optional[re.Pattern] = re.compile(body_regex) if body_regex else None
         self._true_values: list[Any] = true_value if isinstance(true_value, list) else [true_value]
+        self._false_values: list[Any] = false_value if isinstance(false_value, list) else [false_value]
 
         super().__init__(id=id, **kwargs)
 
@@ -78,7 +80,12 @@ class GenericHTTPPort(polled.PolledPort):
             raw_value = client.last_response_status < 300
 
         if self._type == core_ports.TYPE_BOOLEAN:
-            return raw_value in self._true_values
+            if raw_value in self._true_values:
+                return True
+            elif raw_value in self._false_values:
+                return False
+            else:
+                return
         else:
             if isinstance(raw_value, bool):
                 return int(raw_value)
