@@ -5,7 +5,7 @@ from typing import Any, cast, Optional
 import jsonpointer
 
 from qtoggleserver.core import ports as core_ports
-from qtoggleserver.core.typing import NullablePortValue, PortValue
+from qtoggleserver.core.typing import NullablePortValue
 from qtoggleserver.lib import polled
 
 from .client import GenericHTTPClient
