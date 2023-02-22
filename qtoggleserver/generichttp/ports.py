@@ -106,5 +106,5 @@ class GenericHTTPPort(polled.PolledPort):
             elif isinstance(raw_value, (int, float)):
                 return raw_value
 
-    async def write_value(self, value: PortValue) -> None:
+    async def write_value(self, value: NullablePortValue) -> None:
         await self.get_peripheral().write_port_value(self, self._write_details, context={'new_value': value})
