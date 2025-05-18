@@ -103,10 +103,14 @@ class GenericHTTPClient(polled.PolledPeripheral):
             request_params = await self.prepare_request(details, context)
             async with session.request(**request_params) as response:
                 try:
-                    await response.read()
+                    _ = await response.read()
                 except Exception as e:
                     self.error('write request failed: %s', e, exc_info=True)
 
+                if response.status != 200 and not self.ignore_response_code:
+                    raise core_ports.PortWriteError('Write request failed with status code %d' % response.status)
+
+        # TODO: remove me after `PolledPeripheral` gets an option to do this kind of polling after write
         await self.poll()
 
     async def prepare_request(self, details: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
@@ -123,9 +127,17 @@ class GenericHTTPClient(polled.PolledPeripheral):
         if self.auth['type'] == 'basic':
             auth = aiohttp.BasicAuth(self.auth.get('username', ''), self.auth.get('password', ''))
 
+        url = details['url']
+        if details.get('query'):
+            # Don't use `urlencode` because we don't want our special characters to be encoded, as they might be part
+            # of a template.
+            query_str = '&'.join(f'{k}={v}' for k, v in details['query'].items())
+            url = url + '?' + query_str
+        url = await self.replace_placeholders_rec(url, context)
+
         d = {
             'method': details['method'],
-            'url': await self.replace_placeholders_rec(details['url'], context),
+            'url': url,
             'ssl': not self.ignore_invalid_cert,
             'timeout': self.timeout
         }

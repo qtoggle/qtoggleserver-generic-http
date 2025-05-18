@@ -48,27 +48,27 @@ class GenericHTTPPort(polled.PolledPort):
         client = self.get_peripheral()
 
         if client.last_response_status is None:
-            return
+            return None
 
         if not client.ignore_response_code and client.last_response_status >= 400:
-            return
+            return None
 
         # JSON pointer lookup
         if self._json_path:
             if client.last_response_json is None:  # not a JSON response
-                return
+                return None
 
             try:
                 raw_value = jsonpointer.resolve_pointer(client.last_response_json, self._json_path)
             except jsonpointer.JsonPointerException:
                 # Return value unavailable when JSON pointer cannot be resolved instead of propagating the exception
-                return
+                return None
 
         # Regex pattern match
         elif self._body_regex:
             match = self._body_regex.match(client.last_response_body)
             if match is None:
-                return
+                return None
 
             try:
                 raw_value = match.group(1)
@@ -102,9 +102,11 @@ class GenericHTTPPort(polled.PolledPort):
                     try:
                         return float(raw_value) * factor
                     except ValueError:
-                        pass
+                        return None
             elif isinstance(raw_value, (int, float)):
                 return raw_value
+            else:
+                return None
 
     async def write_value(self, value: NullablePortValue) -> None:
         await self.get_peripheral().write_port_value(self, self._write_details, context={'new_value': value})
