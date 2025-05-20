@@ -95,12 +95,11 @@ class GenericHTTPClient(polled.PolledPeripheral):
         for k, v in self.write_details.items():
             details.setdefault(k, v)
 
-        self.debug('write request %s %s', details['method'], details['url'])
-
         context = dict(context, **(await self.get_placeholders_context(port)))
 
         async with aiohttp.ClientSession() as session:
             request_params = await self.prepare_request(details, context)
+            self.debug('write request %s %s', request_params['method'], request_params['url'])
             async with session.request(**request_params) as response:
                 try:
                     _ = await response.read()
