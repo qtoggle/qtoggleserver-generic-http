@@ -1,6 +1,6 @@
 import logging
 
-from typing import Any, Optional, Union
+from typing import Any
 
 import aiohttp
 import jinja2.nativetypes
@@ -20,54 +20,49 @@ class GenericHTTPClient(polled.PolledPeripheral):
         self,
         *,
         read: dict[str, Any],
-        write: Optional[dict[str, Any]] = None,
-        auth: Optional[dict[str, Any]] = None,
+        write: dict[str, Any] | None = None,
+        auth: dict[str, Any] | None = None,
         ignore_response_code: bool = False,
         ignore_invalid_cert: bool = False,
         timeout: int = DEFAULT_TIMEOUT,
         ports: dict[str, dict[str, Any]],
-        **kwargs
+        **kwargs,
     ) -> None:
-
         self.read_details: dict[str, Any] = read
-        self.read_details.setdefault('method', 'GET')
+        self.read_details.setdefault("method", "GET")
 
         self.write_details: dict[str, Any] = write or {}
-        self.write_details.setdefault('url', self.read_details.get('url'))
-        self.write_details.setdefault('method', 'POST')
+        self.write_details.setdefault("url", self.read_details.get("url"))
+        self.write_details.setdefault("method", "POST")
 
         self.auth: dict[str, str] = auth or {}
-        self.auth.setdefault('type', 'none')
+        self.auth.setdefault("type", "none")
         self.ignore_response_code: bool = ignore_response_code
         self.ignore_invalid_cert: bool = ignore_invalid_cert
         self.timeout: int = timeout
         self.port_details: dict[str, dict[str, Any]] = ports
 
-        self.last_response_status: Optional[int] = None
-        self.last_response_body: Optional[str] = None
-        self.last_response_json: Optional[Any] = None
-        self.last_response_headers: Optional[dict[str, Any]] = None
+        self.last_response_status: int | None = None
+        self.last_response_body: str | None = None
+        self.last_response_json: Any | None = None
+        self.last_response_headers: dict[str, Any] | None = None
 
         self._j2env: jinja2.nativetypes.NativeEnvironment = jinja2.nativetypes.NativeEnvironment(enable_async=True)
         self._j2env.globals.update(__builtins__)
 
         super().__init__(**kwargs)
 
-    async def make_port_args(self) -> list[Union[dict[str, Any], type[core_ports.BasePort]]]:
+    async def make_port_args(self) -> list[dict[str, Any] | type[core_ports.BasePort]]:
         from .ports import GenericHTTPPort
 
         port_args = []
         for id_, details in self.port_details.items():
-            port_args.append({
-                'driver': GenericHTTPPort,
-                'id': id_,
-                **details
-            })
+            port_args.append({"driver": GenericHTTPPort, "id": id_, **details})
 
         return port_args
 
     async def poll(self) -> None:
-        self.debug('read request %s %s', self.read_details['method'], self.read_details['url'])
+        self.debug("read request %s %s", self.read_details["method"], self.read_details["url"])
 
         async with aiohttp.ClientSession() as session:
             request_params = await self.prepare_request(self.read_details, {})
@@ -85,12 +80,8 @@ class GenericHTTPClient(polled.PolledPeripheral):
                     self.last_response_json = None
 
     async def write_port_value(
-        self,
-        port: core_ports.BasePort,
-        request_details: dict[str, Any],
-        context: dict[str, Any]
+        self, port: core_ports.BasePort, request_details: dict[str, Any], context: dict[str, Any]
     ) -> None:
-
         details = request_details
         for k, v in self.write_details.items():
             details.setdefault(k, v)
@@ -99,71 +90,62 @@ class GenericHTTPClient(polled.PolledPeripheral):
 
         async with aiohttp.ClientSession() as session:
             request_params = await self.prepare_request(details, context)
-            self.debug('write request %s %s', request_params['method'], request_params['url'])
+            self.debug("write request %s %s", request_params["method"], request_params["url"])
             async with session.request(**request_params) as response:
                 try:
                     _ = await response.read()
                 except Exception as e:
-                    self.error('write request failed: %s', e, exc_info=True)
+                    self.error("write request failed: %s", e, exc_info=True)
 
                 if response.status != 200 and not self.ignore_response_code:
-                    raise core_ports.PortWriteError('Write request failed with status code %d' % response.status)
+                    raise core_ports.PortWriteError("Write request failed with status code %d" % response.status)
 
         # TODO: remove me after `PolledPeripheral` gets an option to do this kind of polling after write
         await self.poll()
 
     async def prepare_request(self, details: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
-        headers = details.get('headers', {})
-        request_body = details.get('request_body')
+        headers = details.get("headers", {})
+        request_body = details.get("request_body")
         if request_body is not None:
             request_body = await self.replace_placeholders_rec(request_body, context)
 
         if request_body is not None and not isinstance(request_body, str):  # assuming JSON body
             request_body = json_utils.dumps(request_body)
-            headers.setdefault('Content-Type', 'application/json')
+            headers.setdefault("Content-Type", "application/json")
 
         auth = None
-        if self.auth['type'] == 'basic':
-            auth = aiohttp.BasicAuth(self.auth.get('username', ''), self.auth.get('password', ''))
+        if self.auth["type"] == "basic":
+            auth = aiohttp.BasicAuth(self.auth.get("username", ""), self.auth.get("password", ""))
 
-        url = details['url']
-        if details.get('query'):
+        url = details["url"]
+        if details.get("query"):
             # Don't use `urlencode` because we don't want our special characters to be encoded, as they might be part
             # of a template.
-            query_str = '&'.join(f'{k}={v}' for k, v in details['query'].items())
-            url = url + '?' + query_str
+            query_str = "&".join(f"{k}={v}" for k, v in details["query"].items())
+            url = url + "?" + query_str
         url = await self.replace_placeholders_rec(url, context)
 
-        d = {
-            'method': details['method'],
-            'url': url,
-            'ssl': not self.ignore_invalid_cert,
-            'timeout': self.timeout
-        }
+        d = {"method": details["method"], "url": url, "ssl": not self.ignore_invalid_cert, "timeout": self.timeout}
 
-        if 'params' in details:
-            d['params'] = await self.replace_placeholders_rec(details['params'], context)
+        if "params" in details:
+            d["params"] = await self.replace_placeholders_rec(details["params"], context)
 
         if headers:
-            d['headers'] = await self.replace_placeholders_rec(headers, context)
+            d["headers"] = await self.replace_placeholders_rec(headers, context)
 
-        if 'cookies' in details:
-            d['cookies'] = await self.replace_placeholders_rec(details['cookies'], context)
+        if "cookies" in details:
+            d["cookies"] = await self.replace_placeholders_rec(details["cookies"], context)
 
         if request_body is not None:
-            d['data'] = request_body
+            d["data"] = request_body
 
         if auth:
-            d['auth'] = auth
+            d["auth"] = auth
 
         return d
 
     async def get_placeholders_context(self, port: core_ports.BasePort) -> dict[str, Any]:
-        context = {
-            'port': port,
-            'value': port.get_last_read_value(),
-            'attrs': await port.get_attrs()
-        }
+        context = {"port": port, "value": port.get_last_read_value(), "attrs": await port.get_attrs()}
 
         return context
 
