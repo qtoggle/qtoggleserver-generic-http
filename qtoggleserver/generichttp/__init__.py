@@ -3,4 +3,4 @@ from .client import GenericHTTPClient
 
 __all__ = ["GenericHTTPClient"]
 
-VERSION = "unknown"
+VERSION = "unknown-version"
