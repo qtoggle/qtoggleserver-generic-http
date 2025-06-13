@@ -1,6 +1,6 @@
 [project]
 name = "qtoggleserver-generic-http"
-version = "unknown-version"
+version = "0.0.0"
 description = "qToggleServer ports backed by configurable HTTP requests"
 authors = [
     {name = "Calin Crisan", email = "ccrisan@gmail.com"},
@@ -16,7 +16,8 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-  "ruff",
+    "pre-commit",
+    "ruff",
 ]
 
 [tool.ruff]
