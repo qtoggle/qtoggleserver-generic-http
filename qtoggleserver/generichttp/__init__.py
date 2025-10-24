@@ -1,4 +1,6 @@
 from .client import GenericHTTPClient
 
 
-VERSION = 'unknown'
+__all__ = ["GenericHTTPClient"]
+
+VERSION = "0.0.0"

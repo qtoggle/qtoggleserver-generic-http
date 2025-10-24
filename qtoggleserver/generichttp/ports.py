@@ -1,6 +1,6 @@
 import re
 
-from typing import Any, cast, Optional
+from typing import Any, cast
 
 import jsonpointer
 
@@ -19,23 +19,22 @@ class GenericHTTPPort(polled.PolledPort):
         type: str = core_ports.TYPE_BOOLEAN,
         writable: bool = False,
         read: dict[str, Any],
-        write: Optional[dict[str, Any]] = None,
-        **kwargs
+        write: dict[str, Any] | None = None,
+        **kwargs,
     ) -> None:
-
         # These will directly determine the port type attribute
         self._type = type
         self._writable = writable
 
         self._write_details: dict[str, Any] = write or {}
 
-        json_path = read.get('json_path')
-        body_regex = read.get('body_regex')
-        true_value = read.get('true_value', True)
-        false_value = read.get('false_value', False)
+        json_path = read.get("json_path")
+        body_regex = read.get("body_regex")
+        true_value = read.get("true_value", True)
+        false_value = read.get("false_value", False)
 
-        self._json_path: Optional[str] = json_path
-        self._body_regex: Optional[re.Pattern] = re.compile(body_regex) if body_regex else None
+        self._json_path: str | None = json_path
+        self._body_regex: re.Pattern | None = re.compile(body_regex) if body_regex else None
         self._true_values: list[Any] = true_value if isinstance(true_value, list) else [true_value]
         self._false_values: list[Any] = false_value if isinstance(false_value, list) else [false_value]
 
@@ -92,8 +91,8 @@ class GenericHTTPPort(polled.PolledPort):
             elif isinstance(raw_value, str):
                 raw_value = raw_value.strip()
                 factor = 1
-                if raw_value.endswith('%'):
-                    raw_value = raw_value.strip('%')
+                if raw_value.endswith("%"):
+                    raw_value = raw_value.strip("%")
                     factor = 0.01
 
                 try:
@@ -109,4 +108,4 @@ class GenericHTTPPort(polled.PolledPort):
                 return None
 
     async def write_value(self, value: NullablePortValue) -> None:
-        await self.get_peripheral().write_port_value(self, self._write_details, context={'new_value': value})
+        await self.get_peripheral().write_port_value(self, self._write_details, context={"new_value": value})
