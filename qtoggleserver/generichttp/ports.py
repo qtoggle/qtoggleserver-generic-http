@@ -22,10 +22,6 @@ class GenericHTTPPort(polled.PolledPort):
         write: dict[str, Any] | None = None,
         **kwargs,
     ) -> None:
-        # These will directly determine the port type attribute
-        self._type = type
-        self._writable = writable
-
         self._write_details: dict[str, Any] = write or {}
 
         json_path = read.get("json_path")
@@ -39,6 +35,10 @@ class GenericHTTPPort(polled.PolledPort):
         self._false_values: list[Any] = false_value if isinstance(false_value, list) else [false_value]
 
         super().__init__(id=id, **kwargs)
+
+        # These will directly determine the port type attribute
+        self._type = type
+        self._writable = writable
 
     def get_peripheral(self) -> GenericHTTPClient:
         return cast(GenericHTTPClient, super().get_peripheral())
