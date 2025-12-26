@@ -3,11 +3,11 @@ import logging
 from typing import Any
 
 import aiohttp
-import jinja2.nativetypes
 
 from qtoggleserver.core import ports as core_ports
 from qtoggleserver.lib import polled
 from qtoggleserver.utils import json as json_utils
+from qtoggleserver.utils import template as template_utils
 
 
 DEFAULT_TIMEOUT = 10  # seconds
@@ -46,9 +46,6 @@ class GenericHTTPClient(polled.PolledPeripheral):
         self.last_response_body: str | None = None
         self.last_response_json: Any | None = None
         self.last_response_headers: dict[str, Any] | None = None
-
-        self._j2env: jinja2.nativetypes.NativeEnvironment = jinja2.nativetypes.NativeEnvironment(enable_async=True)
-        self._j2env.globals.update(__builtins__)
 
         super().__init__(**kwargs)
 
@@ -158,7 +155,6 @@ class GenericHTTPClient(polled.PolledPeripheral):
         elif isinstance(obj, list):
             return [await self.replace_placeholders_rec(e, context) for e in obj]
         elif isinstance(obj, str):
-            template = self._j2env.from_string(obj)
-            return await template.render_async(context)
+            return await template_utils.render_native(obj, context)
         else:
             return obj
