@@ -4,6 +4,7 @@ from typing import Any
 
 import aiohttp
 
+from qtoggleserver.conf import metadata
 from qtoggleserver.core import ports as core_ports
 from qtoggleserver.lib import polled
 from qtoggleserver.utils import json as json_utils
@@ -58,11 +59,17 @@ class GenericHTTPClient(polled.PolledPeripheral):
 
         return port_args
 
+    def get_common_context(self) -> dict:
+        return {
+            "metadata": metadata.get_all(),
+        }
+
     async def poll(self) -> None:
         self.debug("read request %s %s", self.read_details["method"], self.read_details["url"])
 
         async with aiohttp.ClientSession() as session:
-            request_params = await self.prepare_request(self.read_details, {})
+            context = self.get_common_context()
+            request_params = await self.prepare_request(self.read_details, context)
             async with session.request(**request_params) as response:
                 data = await response.read()
 
@@ -83,7 +90,7 @@ class GenericHTTPClient(polled.PolledPeripheral):
         for k, v in self.write_details.items():
             details.setdefault(k, v)
 
-        context = dict(context, **(await self.get_placeholders_context(port)))
+        context = self.get_common_context() | await self.get_placeholders_context(port) | context
 
         async with aiohttp.ClientSession() as session:
             request_params = await self.prepare_request(details, context)
