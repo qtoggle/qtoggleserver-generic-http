@@ -15,6 +15,8 @@ DEFAULT_TIMEOUT = 10  # seconds
 
 
 class GenericHTTPClient(polled.PolledPeripheral):
+    POLL_AFTER_WRITE = True
+
     logger = logging.getLogger(__name__)
 
     def __init__(
@@ -103,9 +105,6 @@ class GenericHTTPClient(polled.PolledPeripheral):
 
                 if response.status != 200 and not self.ignore_response_code:
                     raise core_ports.PortWriteError("Write request failed with status code %d" % response.status)
-
-        # TODO: remove me after `PolledPeripheral` gets an option to do this kind of polling after write
-        await self.poll()
 
     async def prepare_request(self, details: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         headers = details.get("headers", {})
