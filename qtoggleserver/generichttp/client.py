@@ -1,4 +1,5 @@
 import logging
+import time
 
 from typing import Any
 
@@ -7,6 +8,7 @@ import aiohttp
 from qtoggleserver.conf import metadata
 from qtoggleserver.core import ports as core_ports
 from qtoggleserver.lib import polled
+from qtoggleserver.utils import expressions as expressions_utils
 from qtoggleserver.utils import json as json_utils
 from qtoggleserver.utils import template as template_utils
 
@@ -61,16 +63,21 @@ class GenericHTTPClient(polled.PolledPeripheral):
 
         return port_args
 
-    def get_common_context(self) -> dict:
+    async def get_common_context(self) -> dict:
+        eval_context = await expressions_utils.build_context(int(time.time() * 1000))
+
         return {
             "metadata": metadata.get_all(),
+            "device_attrs": eval_context.device_attrs,
+            "port_values": eval_context.port_values,
+            "port_attrs": eval_context.port_attrs,
         }
 
     async def poll(self) -> None:
         self.debug("read request %s %s", self.read_details["method"], self.read_details["url"])
 
         async with aiohttp.ClientSession() as session:
-            context = self.get_common_context()
+            context = await self.get_common_context()
             request_params = await self.prepare_request(self.read_details, context)
             async with session.request(**request_params) as response:
                 data = await response.read()
@@ -92,7 +99,7 @@ class GenericHTTPClient(polled.PolledPeripheral):
         for k, v in self.write_details.items():
             details.setdefault(k, v)
 
-        context = self.get_common_context() | await self.get_placeholders_context(port) | context
+        context = await self.get_common_context() | await self.get_placeholders_context(port) | context
 
         async with aiohttp.ClientSession() as session:
             request_params = await self.prepare_request(details, context)
@@ -104,7 +111,7 @@ class GenericHTTPClient(polled.PolledPeripheral):
                     self.error("write request failed: %s", e, exc_info=True)
 
                 if response.status != 200 and not self.ignore_response_code:
-                    raise core_ports.PortWriteError("Write request failed with status code %d" % response.status)
+                    raise core_ports.PortWriteError(f"Write request failed with status code {response.status}")
 
     async def prepare_request(self, details: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         headers = details.get("headers", {})
