@@ -106,6 +106,11 @@ The following context variables are recognized when replacing placeholders:
  * `new_value` - the new port value, available only when writing a value to port
  * `port` - the port itself
  * `attrs` - a dictionary with current port's attributes
+ * `device_attrs` - a dictionary with device attributes (slave devices are referenced using `<slave_name>:<attr_name>`
+   prefix)
+ * `port_attrs` - a dictionary indexed by port id, containing current attributes of each port
+ * `port_values` - a dictionary indexed by port id, containing current value of each port
+ * `metadata` - a dictionary with all the metadata catalog entries
  
 Complex data structures containing lists or dictionaries will be parsed recursively and placeholders will be replaced
 in each element or key.
@@ -120,10 +125,12 @@ All builtin Python functions are available to be used inside the placeholder exp
 [Jinja2 Template Designer Docs](https://jinja.palletsprojects.com/en/2.11.x/templates/).
 
 Template strings containing placeholders must be enclosed in quotes. However, their final value will not be surrounded
-by quotes unless it's a string itself.
+by quotes unless it's a string itself. If you really want quotes around your placeholder's real value, you can simply
+ensure that the final value is a string, by passing it to the builtin Python function `str` (e.g. `{{str(new_value)}}`).
 
-If you really want quotes around your placeholder's real value, you can simply ensure that the final value is a string,
-by passing it to the builtin Python function `str` (e.g. `{{str(new_value)}}`).
+Another important note is that numeric port values are most often represented internally by a floating-point datatype,
+even when the actual value has no decimals (e.g. `3.0`). So `{{new_value}}` would result in `3.0` instead of `3` in this
+case. If you need a pure integer value, just cast it to integer: `{{int(new_value)}}`.
 
 ### Port Value Readings
 
@@ -154,7 +161,7 @@ Now given a raw value, the actual port value is determined as follows:
 
 Writing port values is done using an HTTP request whose response is ignored (but awaited, up to the given `timeout`).
 
-As opposed to port readings, there will be one separate request for each port whose value changes.
+As opposed to port readings, there will be one separate request for each port whose value needs to be written.
 
 ### A Few Remarks
 
