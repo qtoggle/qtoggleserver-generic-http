@@ -63,7 +63,8 @@ class GenericHTTPClient(polled.PolledPeripheral):
 
         return port_args
 
-    async def get_common_context(self) -> dict:
+    @staticmethod
+    async def get_common_context() -> dict[str, Any]:
         eval_context = await expressions_utils.build_context(int(time.time() * 1000))
 
         return {

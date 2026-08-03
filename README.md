@@ -107,7 +107,7 @@ The following context variables are recognized when replacing placeholders:
  * `port` - the port itself
  * `attrs` - a dictionary with current port's attributes
  * `device_attrs` - a dictionary with device attributes (slave devices are referenced using `<slave_name>:<attr_name>`
-prefix)
+   prefix)
  * `port_attrs` - a dictionary indexed by port id, containing current attributes of each port
  * `port_values` - a dictionary indexed by port id, containing current value of each port
  * `metadata` - a dictionary with all the metadata catalog entries
