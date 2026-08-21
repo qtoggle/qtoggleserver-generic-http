@@ -5,7 +5,7 @@ from typing import Any, cast
 import jsonpointer
 
 from qtoggleserver.core import ports as core_ports
-from qtoggleserver.core.typing import NullablePortValue
+from qtoggleserver.core.typing import NullablePortValue, PortValue
 from qtoggleserver.lib import polled
 
 from .client import GenericHTTPClient
@@ -107,5 +107,5 @@ class GenericHTTPPort(polled.PolledPort):
             else:
                 return None
 
-    async def write_value(self, value: NullablePortValue) -> None:
+    async def write_value(self, value: PortValue) -> None:
         await self.get_peripheral().write_port_value(self, self._write_details, context={"new_value": value})
