@@ -72,10 +72,6 @@ peripherals = [
             "port_id1" = {
                 type = boolean                # boolean or number
                 writable = true               # defaults to true if a port write section is given, false otherwise
-                min = 0                       # optional lower limit (for number ports)
-                max = 100                     # optional upper limit (for number ports)
-                integer = true                # whether values are integers, defaults to false
-                step = 5                      # optional value step (for number ports)
                 read = {                      # may be omitted, see below
                     json_path = "/path/to/field"  # RFC6901 JSON pointer to port value, inside response body
                     body_regex = "myvalue=(\d+)"  # regular expression inside body for port value lookup
@@ -84,6 +80,16 @@ peripherals = [
                 }
                 write = {
                     ...  # overrides to common write details above
+                }
+            }
+            "port_id2" = {
+                type = number                 # the limits below only make sense for number ports
+                min = 0                       # optional lower limit
+                max = 100                     # optional upper limit
+                integer = true                # whether values are integers, defaults to false
+                step = 5                      # optional value step
+                read = {
+                    json_path = "/path/to/another/field"
                 }
             }
             ...

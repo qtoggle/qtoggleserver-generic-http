@@ -61,8 +61,18 @@ class GenericHTTPPort(polled.PolledPort):
         return cast(GenericHTTPClient, super().get_peripheral())
 
     async def read_value(self) -> NullablePortValue:
+        value = await self._read_value()
+
+        # The base class only adapts the value when a read transform is set. Plain number ports are left alone, as
+        # adapting them would turn every integer into a float.
+        if self._type == core_ports.TYPE_BOOLEAN or self._integer:
+            return self.adapt_value_type(value)
+
+        return value
+
+    async def _read_value(self) -> NullablePortValue:
         if not self._has_read:
-            return self.adapt_value_type(self.get_last_written_value())
+            return self.get_last_written_value()
 
         client = self.get_peripheral()
 
