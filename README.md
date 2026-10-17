@@ -123,13 +123,15 @@ A port with no read section that isn't writable can neither be read nor written,
 By default every port takes its value from the peripheral's read response. A port that needs another URL can put a
 `url` in its own read section. That port then gets a read request of its own, made on every poll.
 
-The peripheral's read section supplies the defaults for `method`, `query`, `headers`, `cookies` and `request_body`, and
-the port's own values win. Ports asking for the very same request share it, so one request is made per poll no matter
-how many ports read from it. Ports that differ in any of those details get a request each, even when the URL is the
-same.
+The peripheral's read section supplies the defaults for `method`, `query`, `params`, `headers`, `cookies` and
+`request_body`, and the port's own values win. A port value replaces the inherited one whole, so a port setting its own
+`headers` gets none of the peripheral's. Writes work the same way. Ports asking for the very same request share it, so
+one request is made per poll no matter how many ports read from it. Ports that differ in any of those details get a
+request each, even when the URL is the same.
 
 A port that only needs another `json_path` or `body_regex` adds no request at all. One that also sets its own `query`
 does. Set an inherited value to `null` to drop it, for example `request_body = null` for a port that reads with `GET`.
+This works in write sections too. Dropping `method` brings back the default: `GET` for reads, `POST` for writes.
 
 `write.url` is still inherited from the peripheral's `read.url`, never from the port's own. So give a write section its
 own `url` whenever the port reads from an URL of its own.
@@ -139,15 +141,31 @@ write-only, it is the only request, so it is what takes the peripheral offline o
 
 When a read request fails, only the ports reading from it are affected. They keep their last value for as many failures
 in a row as `retry_count` allows (none by default), and then lose it. The peripheral goes offline only when every read
-request fails.
+request fails. While others still work, a failing request is retried on the normal poll interval, not on
+`retry_poll_interval`.
 
 After a port is written, only the read request of that port is made again. Ports reading from other requests catch up
-on the next poll.
+on the next poll. If that request fails, the port keeps its value until the next poll.
 
-Two things to keep in mind:
+A read request may use the placeholders that belong to a port: `port`, `value` and `attrs`. It is then made once for
+every port reading from it, with that port's own values. So a single peripheral read section can serve many ports:
 
- * a read request may be shared by several ports, so only the placeholders that don't belong to a port work in one
- * all read requests share the same poll interval, so use separate peripherals if you need different rates
+``` ini
+read = {
+    url = "https://api.example.com/{{port.get_initial_id()}}"
+}
+ports = {
+    "phases" = { type = number, read = { json_path = "/value" } }  # reads /phases
+    "current" = { type = number, read = { json_path = "/value" } }  # reads /current
+}
+```
+
+`port.get_initial_id()` gives the port id as written in the config. `port.get_id()` puts the peripheral name in front of
+it. Mind the spelling: a port has no `id`, and `{{port.id}}` gives an empty string rather than an error.
+
+A peripheral read section that uses those placeholders can't be made without a port, so it isn't polled on its own.
+
+All read requests share the same poll interval, so use separate peripherals if you need different rates.
 
 A port read section without a `url` still needs the peripheral to have one.
 

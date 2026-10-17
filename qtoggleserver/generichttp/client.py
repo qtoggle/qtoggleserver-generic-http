@@ -3,10 +3,12 @@ import dataclasses
 import logging
 import time
 
+from collections.abc import Iterator
 from typing import Any
 
 import aiohttp
 
+from jinja2 import meta as jinja2_meta
 from qtoggleserver.conf import metadata
 from qtoggleserver.core import ports as core_ports
 from qtoggleserver.lib import polled
@@ -20,6 +22,27 @@ DEFAULT_TIMEOUT = 10  # seconds
 
 # Details that tell one read request from another
 READ_REQUEST_FIELDS = ["cookies", "headers", "method", "params", "query", "request_body", "url"]
+
+# Placeholders that belong to a port, so a read request using them is made once per port
+PORT_PLACEHOLDERS = {"attrs", "port", "value"}
+
+
+def drop_nulls(details: dict[str, Any]) -> dict[str, Any]:
+    """Leave out the null values, as a null means dropping an inherited value."""
+    return {k: v for k, v in details.items() if v is not None}
+
+
+def iter_strings(obj: Any) -> Iterator[str]:
+    """Yield every string in `obj`, dict keys included, as any of them may hold placeholders."""
+    if isinstance(obj, str):
+        yield obj
+    elif isinstance(obj, dict):
+        for k, v in obj.items():
+            yield from iter_strings(k)
+            yield from iter_strings(v)
+    elif isinstance(obj, list):
+        for e in obj:
+            yield from iter_strings(e)
 
 
 @dataclasses.dataclass
@@ -50,13 +73,13 @@ class GenericHTTPClient(polled.PolledPeripheral):
     ) -> None:
         # Without a read section we never poll, so all our ports have to read from an URL of their own, or to be
         # write-only
-        self.read_details: dict[str, Any] | None = read
+        self.read_details: dict[str, Any] | None = drop_nulls(read) if read is not None else None
         if self.read_details is not None:
             if self.read_details.get("url") is None:
                 raise ValueError("The read section needs a URL")
             self.read_details.setdefault("method", "GET")
 
-        self.write_details: dict[str, Any] = write or {}
+        self.write_details: dict[str, Any] = drop_nulls(write or {})
         if self.read_details is not None:
             self.write_details.setdefault("url", self.read_details["url"])
         self.write_details.setdefault("method", "POST")
@@ -82,27 +105,32 @@ class GenericHTTPClient(polled.PolledPeripheral):
         # Read requests, keyed so that ports wanting the very same one share it
         self.read_requests: dict[str, dict[str, Any]] = {}
         self.port_read_keys: dict[str, str] = {}
-        if self.read_details is not None:
-            # Keep our own request even when no port reads from it, as it tells us whether the device is still there
+        self.read_request_ports: dict[str, str] = {}  # port id, by key of a request made for a single port
+        if self.read_details is not None and not self.uses_port_placeholders(self.read_details):
+            # Keep our own request even when no port reads from it, as it tells us whether the device is still there.
+            # One that needs a port can't be made on its own, though.
             self.read_requests[self.make_read_key(self.read_details)] = self.read_details
         for id_, details in ports.items():
             port_read = details.get("read")
             if port_read is None:
                 continue
 
-            # Our own read section supplies the defaults
-            request = {**(self.read_details or {}), **port_read}
+            # Our own read section supplies the defaults, and a null drops one of them
+            request = drop_nulls({**(self.read_details or {}), **port_read})
             request.setdefault("method", "GET")
             if request.get("url") is None:
                 raise ValueError(f"Port {id_} has a read section without an URL and there is none to inherit")
 
-            key = self.make_read_key(request)
+            port_id = id_ if self.uses_port_placeholders(request) else None
+            key = self.make_read_key(request, port_id)
             self.read_requests.setdefault(key, request)
             self.port_read_keys[id_] = key
+            if port_id is not None:
+                self.read_request_ports[key] = port_id
 
         self.last_responses: dict[str, Response] = {}
         self.read_failures: dict[str, int] = {}  # failures in a row, by request key
-        self.read_seqs: dict[str, int] = {}  # sequence number of the last answered request, by request key
+        self.read_seqs: dict[str, int] = {}  # sequence number of the newest response we hold, by request key
         self._read_seq: int = 0
 
         super().__init__(**kwargs)
@@ -128,9 +156,23 @@ class GenericHTTPClient(polled.PolledPeripheral):
         }
 
     @staticmethod
-    def make_read_key(details: dict[str, Any]) -> str:
+    def make_read_key(details: dict[str, Any], port_id: str | None = None) -> str:
         """Identify a read request, so that ports wanting the very same one share it."""
-        return json_utils.dumps({f: details[f] for f in READ_REQUEST_FIELDS if f in details}, sort_keys=True)
+        key = {f: details[f] for f in READ_REQUEST_FIELDS if f in details}
+        if port_id is not None:
+            key["port"] = port_id  # rendered with the port's own placeholders, so never shared
+
+        return json_utils.dumps(key, sort_keys=True)
+
+    @staticmethod
+    def uses_port_placeholders(details: dict[str, Any]) -> bool:
+        """Tell whether a read request uses any of the placeholders that belong to a port."""
+        env = template_utils.get_native_env()
+        fields = [details[f] for f in READ_REQUEST_FIELDS if f in details]
+
+        return any(
+            jinja2_meta.find_undeclared_variables(env.parse(s)) & PORT_PLACEHOLDERS for s in iter_strings(fields)
+        )
 
     def get_last_response(self, port_id: str) -> Response | None:
         """Last response of the read request made for the given port."""
@@ -155,7 +197,7 @@ class GenericHTTPClient(polled.PolledPeripheral):
         for key, error in errors.items():
             self.log_read_error(key, error)
 
-    async def fetch(self, keys: list[str]) -> dict[str, Exception]:
+    async def fetch(self, keys: list[str], count_failures: bool = True) -> dict[str, Exception]:
         """Make the given read requests in parallel and keep their responses, returning the errors by key."""
         # Number the requests, so that a slow one can't overwrite what a later one already brought
         seqs = {}
@@ -166,7 +208,7 @@ class GenericHTTPClient(polled.PolledPeripheral):
         async with aiohttp.ClientSession() as session:
             context = await self.get_common_context()
             results = await asyncio.gather(
-                *(self.read_request(session, self.read_requests[k], context) for k in keys), return_exceptions=True
+                *(self.read_request(session, key, context) for key in keys), return_exceptions=True
             )
 
         errors = {}
@@ -174,17 +216,19 @@ class GenericHTTPClient(polled.PolledPeripheral):
             if isinstance(result, BaseException) and not isinstance(result, Exception):
                 raise result  # cancellation and friends must not be swallowed
 
+            # Only a response moves the sequence on, so a failure never hides one that comes in after it
             if seqs[key] < self.read_seqs.get(key, 0):
                 continue
-            self.read_seqs[key] = seqs[key]
 
             if isinstance(result, Exception):
                 errors[key] = result
-                self.read_failures[key] = self.read_failures.get(key, 0) + 1
-                # Keep the last response for as many failures as the peripheral tolerates before going offline
-                if self.read_failures[key] > self._retry_count:
-                    self.last_responses.pop(key, None)
+                if count_failures:
+                    self.read_failures[key] = self.read_failures.get(key, 0) + 1
+                    # Keep the last response for as many failures as the peripheral tolerates before going offline
+                    if self.read_failures[key] > self._retry_count:
+                        self.last_responses.pop(key, None)
             else:
+                self.read_seqs[key] = seqs[key]
                 self.read_failures.pop(key, None)
                 self.last_responses[key] = result
 
@@ -198,9 +242,16 @@ class GenericHTTPClient(polled.PolledPeripheral):
         else:
             self.debug("read request to %s still failing: %s", url, error)
 
-    async def read_request(
-        self, session: aiohttp.ClientSession, details: dict[str, Any], context: dict[str, Any]
-    ) -> Response:
+    async def read_request(self, session: aiohttp.ClientSession, key: str, context: dict[str, Any]) -> Response:
+        details = self.read_requests[key]
+        port_id = self.read_request_ports.get(key)
+        if port_id is not None:
+            port = self.get_port(port_id)
+            if port is None:
+                raise ValueError(f"Port {port_id} isn't loaded")
+
+            context = context | await self.get_placeholders_context(port)
+
         self.debug("read request %s %s", details["method"], details["url"])
 
         request_params = await self.prepare_request(details, context)
@@ -219,10 +270,11 @@ class GenericHTTPClient(polled.PolledPeripheral):
     async def write_port_value(
         self, port: PeripheralPort, request_details: dict[str, Any], context: dict[str, Any]
     ) -> None:
-        # Work on a copy, so our write details don't get folded into the port's own ones
-        details = dict(request_details)
-        for k, v in self.write_details.items():
-            details.setdefault(k, v)
+        # Our own write section supplies the defaults, and a null drops one of them
+        details = drop_nulls({**self.write_details, **request_details})
+        details.setdefault("method", "POST")
+        if details.get("url") is None:
+            raise core_ports.PortWriteError("No write URL")
 
         context = await self.get_common_context() | await self.get_placeholders_context(port) | context
 
@@ -238,11 +290,16 @@ class GenericHTTPClient(polled.PolledPeripheral):
                 if response.status != 200 and not self.ignore_response_code:
                     raise core_ports.PortWriteError(f"Write request failed with status code {response.status}")
 
-        # The write went through, so a failed refresh is only worth a log line, not a failed write
+        # The write went through, so a failed refresh is only worth a log line, never a failed write
         key = self.port_read_keys.get(port.get_initial_id())
         if key is not None:
-            for error_key, error in (await self.fetch([key])).items():
-                self.log_read_error(error_key, error)
+            try:
+                errors = await self.fetch([key], count_failures=False)
+            except Exception as e:
+                errors = {key: e}
+
+            for error in errors.values():
+                self.warning("read request after writing %s failed: %s", port.get_id(), error)
 
     async def prepare_request(self, details: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         headers = dict(details.get("headers") or {})
