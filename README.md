@@ -114,7 +114,7 @@ If no port needs reading, leave out the peripheral `read` section as well. Nothi
  * no port may have a read section
  * `write.url` can no longer be inherited from `read.url`, so every writable port needs a write URL
 
-A port with no read section and no write section can neither be read nor written, so it is rejected.
+A port with no read section that isn't writable can neither be read nor written, so it is rejected.
 
 ### Placeholders
 

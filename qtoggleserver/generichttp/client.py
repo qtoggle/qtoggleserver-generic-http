@@ -54,8 +54,8 @@ class GenericHTTPClient(polled.PolledPeripheral):
             without_url = [
                 id_
                 for id_, details in ports.items()
-                if (details.get("write") is not None or details.get("writable"))
-                and details.get("write", {}).get("url") is None
+                if details.get("writable", details.get("write") is not None)
+                and (details.get("write") or {}).get("url") is None
             ]
             if without_url:
                 raise ValueError(f"Ports {', '.join(without_url)} need a write URL")
@@ -139,7 +139,7 @@ class GenericHTTPClient(polled.PolledPeripheral):
                     raise core_ports.PortWriteError(f"Write request failed with status code {response.status}")
 
     async def prepare_request(self, details: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
-        headers = details.get("headers", {})
+        headers = dict(details.get("headers") or {})
         request_body = details.get("request_body")
         if request_body is not None:
             request_body = await self.replace_placeholders_rec(request_body, context)
