@@ -179,7 +179,15 @@ class GenericHTTPClient(polled.PolledPeripheral):
         return self.last_responses.get(key) if key is not None else None
 
     async def poll(self) -> None:
-        keys = [key for key in self.read_requests if self.wants_read_request(key)]
+        keys = []
+        for key in self.read_requests:
+            if self.wants_read_request(key):
+                keys.append(key)
+            else:
+                # Forget what we knew, so the port doesn't come back with a stale value once enabled again
+                self.last_responses.pop(key, None)
+                self.read_failures.pop(key, None)
+
         if not keys:
             return
 
