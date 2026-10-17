@@ -131,7 +131,9 @@ request each, even when the URL is the same.
 
 A port that only needs another `json_path` or `body_regex` adds no request at all. One that also sets its own `query`
 does. Set an inherited value to `null` to drop it, for example `request_body = null` for a port that reads with `GET`.
-This works in write sections too. Dropping `method` brings back the default: `GET` for reads, `POST` for writes.
+This works in write sections too. Dropping `method` brings back the default: `GET` for reads, `POST` for writes. In the
+same way, dropping `url` in the peripheral's write section brings back its `read.url`. Only without a peripheral read
+section does every writable port have to bring a write URL of its own.
 
 `write.url` is still inherited from the peripheral's `read.url`, never from the port's own. So give a write section its
 own `url` whenever the port reads from an URL of its own.
