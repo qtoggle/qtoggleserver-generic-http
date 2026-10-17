@@ -10,6 +10,7 @@ import aiohttp
 from qtoggleserver.conf import metadata
 from qtoggleserver.core import ports as core_ports
 from qtoggleserver.lib import polled
+from qtoggleserver.peripherals import PeripheralPort
 from qtoggleserver.utils import expressions as expressions_utils
 from qtoggleserver.utils import json as json_utils
 from qtoggleserver.utils import template as template_utils
@@ -30,7 +31,8 @@ class Response:
 
 
 class GenericHTTPClient(polled.PolledPeripheral):
-    POLL_AFTER_WRITE = True
+    # We refresh only the written port's read request ourselves, instead of polling all of them
+    POLL_AFTER_WRITE = False
 
     logger = logging.getLogger(__name__)
 
@@ -99,7 +101,9 @@ class GenericHTTPClient(polled.PolledPeripheral):
             self.port_read_keys[id_] = key
 
         self.last_responses: dict[str, Response] = {}
-        self.read_errors: dict[str, str] = {}
+        self.read_failures: dict[str, int] = {}  # failures in a row, by request key
+        self.read_seqs: dict[str, int] = {}  # sequence number of the last answered request, by request key
+        self._read_seq: int = 0
 
         super().__init__(**kwargs)
 
@@ -138,50 +142,61 @@ class GenericHTTPClient(polled.PolledPeripheral):
         if not self.read_requests:
             return
 
-        keys = list(self.read_requests)
+        errors = await self.fetch(list(self.read_requests))
+        if len(errors) == len(self.read_requests):
+            # Nothing could be read, so fail the poll and leave logging and going offline to the poll loop
+            if len(errors) == 1:
+                raise next(iter(errors.values()))
+
+            urls = ", ".join(self.read_requests[key]["url"] for key in errors)
+            raise ExceptionGroup(f"every read request failed: {urls}", list(errors.values()))
+
+        # One failing request shouldn't hide the ports that read from the other ones
+        for key, error in errors.items():
+            self.log_read_error(key, error)
+
+    async def fetch(self, keys: list[str]) -> dict[str, Exception]:
+        """Make the given read requests in parallel and keep their responses, returning the errors by key."""
+        # Number the requests, so that a slow one can't overwrite what a later one already brought
+        seqs = {}
+        for key in keys:
+            self._read_seq += 1
+            seqs[key] = self._read_seq
+
         async with aiohttp.ClientSession() as session:
             context = await self.get_common_context()
             results = await asyncio.gather(
                 *(self.read_request(session, self.read_requests[k], context) for k in keys), return_exceptions=True
             )
 
-        errors: dict[str, Exception] = {}
-        cancellations: list[BaseException] = []
+        errors = {}
         for key, result in zip(keys, results, strict=True):
+            if isinstance(result, BaseException) and not isinstance(result, Exception):
+                raise result  # cancellation and friends must not be swallowed
+
+            if seqs[key] < self.read_seqs.get(key, 0):
+                continue
+            self.read_seqs[key] = seqs[key]
+
             if isinstance(result, Exception):
                 errors[key] = result
-                self.last_responses.pop(key, None)
-            elif isinstance(result, BaseException):
-                cancellations.append(result)
+                self.read_failures[key] = self.read_failures.get(key, 0) + 1
+                # Keep the last response for as many failures as the peripheral tolerates before going offline
+                if self.read_failures[key] > self._retry_count:
+                    self.last_responses.pop(key, None)
             else:
-                self.read_errors.pop(key, None)
+                self.read_failures.pop(key, None)
                 self.last_responses[key] = result
 
-        # Cancellation and friends must not be swallowed, but the responses we did get are still worth keeping
-        if cancellations:
-            raise cancellations[0]
-
-        if len(errors) == len(self.read_requests):
-            # Nothing could be read, so fail the poll and let it take us offline. The poll loop logs the error, so
-            # there's no point in logging each one here as well.
-            if len(errors) == 1:
-                raise next(iter(errors.values()))
-
-            raise ExceptionGroup("every read request failed", list(errors.values()))
-
-        # One failing request shouldn't hide the ports that read from the other ones
-        for key, error in errors.items():
-            self.log_read_error(key, error)
+        return errors
 
     def log_read_error(self, key: str, error: Exception) -> None:
         """Log a failed read request, keeping a request that stays broken from flooding the log."""
         url = self.read_requests[key]["url"]
-        message = str(error)
-        if self.read_errors.get(key) == message:
-            self.debug("read request to %s still failing: %s", url, message)
+        if self.read_failures.get(key) == 1:
+            self.error("read request to %s failed: %s", url, error, exc_info=error)
         else:
-            self.read_errors[key] = message
-            self.error("read request to %s failed: %s", url, message, exc_info=error)
+            self.debug("read request to %s still failing: %s", url, error)
 
     async def read_request(
         self, session: aiohttp.ClientSession, details: dict[str, Any], context: dict[str, Any]
@@ -202,7 +217,7 @@ class GenericHTTPClient(polled.PolledPeripheral):
             return Response(status=response.status, body=body, json=json_, headers=dict(response.headers))
 
     async def write_port_value(
-        self, port: core_ports.BasePort, request_details: dict[str, Any], context: dict[str, Any]
+        self, port: PeripheralPort, request_details: dict[str, Any], context: dict[str, Any]
     ) -> None:
         # Work on a copy, so our write details don't get folded into the port's own ones
         details = dict(request_details)
@@ -222,6 +237,12 @@ class GenericHTTPClient(polled.PolledPeripheral):
 
                 if response.status != 200 and not self.ignore_response_code:
                     raise core_ports.PortWriteError(f"Write request failed with status code {response.status}")
+
+        # The write went through, so a failed refresh is only worth a log line, not a failed write
+        key = self.port_read_keys.get(port.get_initial_id())
+        if key is not None:
+            for error_key, error in (await self.fetch([key])).items():
+                self.log_read_error(error_key, error)
 
     async def prepare_request(self, details: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         headers = dict(details.get("headers") or {})

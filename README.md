@@ -129,16 +129,20 @@ how many ports read from it. Ports that differ in any of those details get a req
 same.
 
 A port that only needs another `json_path` or `body_regex` adds no request at all. One that also sets its own `query`
-does.
+does. Set an inherited value to `null` to drop it, for example `request_body = null` for a port that reads with `GET`.
 
 `write.url` is still inherited from the peripheral's `read.url`, never from the port's own. So give a write section its
 own `url` whenever the port reads from an URL of its own.
 
-The peripheral's own read request is made on every poll even when no port reads from it. That way the peripheral still
-notices when the device stops answering.
+The peripheral's own read request is made on every poll even when no port reads from it. When every port is
+write-only, it is the only request, so it is what takes the peripheral offline once the device stops answering.
 
-When a read request fails, only the ports reading from that URL lose their value. The peripheral goes offline only when
-every read request fails.
+When a read request fails, only the ports reading from it are affected. They keep their last value for as many failures
+in a row as `retry_count` allows (none by default), and then lose it. The peripheral goes offline only when every read
+request fails.
+
+After a port is written, only the read request of that port is made again. Ports reading from other requests catch up
+on the next poll.
 
 Two things to keep in mind:
 
