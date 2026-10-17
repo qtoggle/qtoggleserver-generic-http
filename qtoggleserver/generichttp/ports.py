@@ -18,11 +18,16 @@ class GenericHTTPPort(polled.PolledPort):
         id: str,
         type: str = core_ports.TYPE_BOOLEAN,
         writable: bool | None = None,
-        read: dict[str, Any],
+        read: dict[str, Any] | None = None,
         write: dict[str, Any] | None = None,
         **kwargs,
     ) -> None:
         self._write_details: dict[str, Any] = write or {}
+
+        # Some integrations can't give a value back, so a port without a read section simply reports the last written
+        # value.
+        self._has_read: bool = read is not None
+        read = read or {}
 
         json_path = read.get("json_path")
         body_regex = read.get("body_regex")
@@ -45,6 +50,9 @@ class GenericHTTPPort(polled.PolledPort):
         return cast(GenericHTTPClient, super().get_peripheral())
 
     async def read_value(self) -> NullablePortValue:
+        if not self._has_read:
+            return self.get_last_written_value()
+
         client = self.get_peripheral()
 
         if client.last_response_status is None:

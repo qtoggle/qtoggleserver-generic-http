@@ -72,7 +72,7 @@ peripherals = [
             "port_id1" = {
                 type = boolean                # boolean or number
                 writable = true               # defaults to true if a port write section is given, false otherwise
-                read = {
+                read = {                      # may be omitted, see below
                     json_path = "/path/to/field"  # RFC6901 JSON pointer to port value, inside response body
                     body_regex = "myvalue=(\d+)"  # regular expression inside body for port value lookup
                     true_value = 1                # value or list of values that are true (for boolean ports)
@@ -89,6 +89,13 @@ peripherals = [
 ]
 ...
 ```
+
+### Ports without a read section
+
+Some HTTP integrations can't give a value back. Leave out the port `read` section for those. The port then reports the
+last value written to it. Before the first write, its value is unavailable.
+
+The last written value is remembered across restarts.
 
 ### Placeholders
 
