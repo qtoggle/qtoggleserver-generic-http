@@ -82,6 +82,16 @@ peripherals = [
                     ...  # overrides to common write details above
                 }
             }
+            "port_id2" = {
+                type = number                 # the limits below only make sense for number ports
+                min = 0                       # optional lower limit
+                max = 100                     # optional upper limit
+                integer = true                # whether values are integers, defaults to false
+                step = 5                      # optional value step
+                read = {
+                    json_path = "/path/to/another/field"
+                }
+            }
             ...
         }
     }
