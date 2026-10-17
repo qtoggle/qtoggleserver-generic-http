@@ -39,6 +39,9 @@ class GenericHTTPPort(polled.PolledPort):
         self._has_read: bool = read is not None
         read = read or {}
 
+        # A port with an URL of its own reads from a response of its own
+        self._read_url: str | None = read.get("url")
+
         json_path = read.get("json_path")
         body_regex = read.get("body_regex")
         true_value = read.get("true_value", True)
@@ -78,26 +81,27 @@ class GenericHTTPPort(polled.PolledPort):
 
         client = self.get_peripheral()
 
-        if client.last_response_status is None:
+        response = client.get_last_response(self._read_url)
+        if response is None:
             return None
 
-        if not client.ignore_response_code and client.last_response_status >= 400:
+        if not client.ignore_response_code and response.status >= 400:
             return None
 
         # JSON pointer lookup
         if self._json_path:
-            if client.last_response_json is None:  # not a JSON response
+            if response.json is None:  # not a JSON response
                 return None
 
             try:
-                raw_value = jsonpointer.resolve_pointer(client.last_response_json, self._json_path)
+                raw_value = jsonpointer.resolve_pointer(response.json, self._json_path)
             except jsonpointer.JsonPointerException:
                 # Return value unavailable when JSON pointer cannot be resolved instead of propagating the exception
                 return None
 
         # Regex pattern match
         elif self._body_regex:
-            match = self._body_regex.match(client.last_response_body)
+            match = self._body_regex.match(response.body)
             if match is None:
                 return None
 
@@ -108,7 +112,7 @@ class GenericHTTPPort(polled.PolledPort):
 
         # Value determined by status code
         else:
-            raw_value = client.last_response_status < 300
+            raw_value = response.status < 300
 
         if self._type == core_ports.TYPE_BOOLEAN:
             if self._true_values:

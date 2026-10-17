@@ -1,3 +1,4 @@
+import dataclasses
 import logging
 import time
 
@@ -14,6 +15,14 @@ from qtoggleserver.utils import template as template_utils
 
 
 DEFAULT_TIMEOUT = 10  # seconds
+
+
+@dataclasses.dataclass
+class Response:
+    status: int
+    body: str
+    json: Any
+    headers: dict[str, Any]
 
 
 class GenericHTTPClient(polled.PolledPeripheral):
@@ -33,16 +42,24 @@ class GenericHTTPClient(polled.PolledPeripheral):
         ports: dict[str, dict[str, Any]],
         **kwargs,
     ) -> None:
-        # Without a read section we never poll, so all our ports have to be write-only
+        # Without a read section we never poll, so all our ports have to read from an URL of their own, or to be
+        # write-only
         self.read_details: dict[str, Any] | None = read
         if self.read_details is not None:
             if self.read_details.get("url") is None:
                 raise ValueError("The read section needs a URL")
             self.read_details.setdefault("method", "GET")
         else:
-            with_read = [id_ for id_, details in ports.items() if details.get("read") is not None]
-            if with_read:
-                raise ValueError(f"Ports {', '.join(with_read)} have a read section, but the peripheral has none")
+            without_url = [
+                id_
+                for id_, details in ports.items()
+                if details.get("read") is not None and details["read"].get("url") is None
+            ]
+            if without_url:
+                raise ValueError(
+                    f"Ports {', '.join(without_url)} have a read section without an URL, but the peripheral has no "
+                    f"read section to take one from"
+                )
 
         self.write_details: dict[str, Any] = write or {}
         if self.read_details is not None:
@@ -67,10 +84,20 @@ class GenericHTTPClient(polled.PolledPeripheral):
         self.timeout: int = timeout
         self.port_details: dict[str, dict[str, Any]] = ports
 
-        self.last_response_status: int | None = None
-        self.last_response_body: str | None = None
-        self.last_response_json: Any | None = None
-        self.last_response_headers: dict[str, Any] | None = None
+        # Read requests by URL, so ports sharing an URL also share a single request per poll
+        self.read_requests: dict[str, dict[str, Any]] = {}
+        if self.read_details is not None:
+            self.read_requests[self.read_details["url"]] = self.read_details
+        for details in ports.values():
+            port_read = details.get("read") or {}
+            url = port_read.get("url")
+            if url is not None and url not in self.read_requests:
+                # Our own read section supplies the defaults
+                request = {**(self.read_details or {}), **port_read}
+                request.setdefault("method", "GET")
+                self.read_requests[url] = request
+
+        self.last_responses: dict[str, Response] = {}
 
         super().__init__(**kwargs)
 
@@ -94,27 +121,50 @@ class GenericHTTPClient(polled.PolledPeripheral):
             "port_attrs": eval_context.port_attrs,
         }
 
+    def get_last_response(self, url: str | None) -> Response | None:
+        """Last response of the read request for `url`, or of our own read request when `url` is `None`."""
+        if url is None:
+            url = (self.read_details or {}).get("url")
+
+        return self.last_responses.get(url)
+
     async def poll(self) -> None:
-        if self.read_details is None:
+        if not self.read_requests:
             return
 
-        self.debug("read request %s %s", self.read_details["method"], self.read_details["url"])
-
+        errors = []
         async with aiohttp.ClientSession() as session:
             context = await self.get_common_context()
-            request_params = await self.prepare_request(self.read_details, context)
-            async with session.request(**request_params) as response:
-                data = await response.read()
-
-                self.last_response_body = data.decode()
-                self.last_response_status = response.status
-                self.last_response_headers = dict(response.headers)
-
-                # Attempt to decode JSON but don't worry at all if that is not possible
+            for url, details in self.read_requests.items():
                 try:
-                    self.last_response_json = json_utils.loads(self.last_response_body)
-                except Exception:
-                    self.last_response_json = None
+                    self.last_responses[url] = await self.read_request(session, details, context)
+                except Exception as e:
+                    # One failing URL shouldn't hide the ports that read from the other ones
+                    self.error("read request to %s failed: %s", url, e, exc_info=True)
+                    self.last_responses.pop(url, None)
+                    errors.append(e)
+
+        # Only give up when every read request failed
+        if len(errors) == len(self.read_requests):
+            raise errors[0]
+
+    async def read_request(
+        self, session: aiohttp.ClientSession, details: dict[str, Any], context: dict[str, Any]
+    ) -> Response:
+        self.debug("read request %s %s", details["method"], details["url"])
+
+        request_params = await self.prepare_request(details, context)
+        async with session.request(**request_params) as response:
+            data = await response.read()
+            body = data.decode()
+
+            # Attempt to decode JSON but don't worry at all if that is not possible
+            try:
+                json_ = json_utils.loads(body)
+            except Exception:
+                json_ = None
+
+            return Response(status=response.status, body=body, json=json_, headers=dict(response.headers))
 
     async def write_port_value(
         self, port: core_ports.BasePort, request_details: dict[str, Any], context: dict[str, Any]

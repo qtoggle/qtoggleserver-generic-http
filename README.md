@@ -73,6 +73,7 @@ peripherals = [
                 type = boolean                # boolean or number
                 writable = true               # defaults to true if a port write section is given, false otherwise
                 read = {                      # may be omitted, see below
+                    url = "https://api.example.com/other"  # own read request for this port, see below
                     json_path = "/path/to/field"  # RFC6901 JSON pointer to port value, inside response body
                     body_regex = "myvalue=(\d+)"  # regular expression inside body for port value lookup
                     true_value = 1                # value or list of values that are true (for boolean ports)
@@ -109,12 +110,32 @@ restarts.
 Such ports can sit next to regular ones in the same peripheral. The peripheral keeps polling its read URL, the regular
 ports take their values from the response, and the read-less ones report what was last written to them.
 
-If no port needs reading, leave out the peripheral `read` section as well. Nothing is polled at all then. In that case:
+You can leave out the peripheral `read` section as well. Then nothing is polled, except the URLs the ports bring
+themselves. In that case:
 
- * no port may have a read section
+ * every port read section needs an `url` of its own
  * `write.url` can no longer be inherited from `read.url`, so every writable port needs a write URL
 
 A port with no read section that isn't writable can neither be read nor written, so it is rejected.
+
+### Reading from several URLs
+
+By default every port takes its value from the peripheral's read response. A port that needs another URL can put a
+`url` in its own read section. That port then gets a read request of its own, made on every poll.
+
+Ports naming the same URL share a single request. So does a port whose `url` is the peripheral's own read URL. The
+peripheral's read section supplies the defaults for `method`, `query`, `headers`, `cookies` and `request_body`, and the
+port's own values win.
+
+When a read request fails, only the ports reading from that URL lose their value. The peripheral goes offline only when
+every read request fails.
+
+Two things to keep in mind:
+
+ * a read request may be shared by several ports, so only the placeholders that don't belong to a port work in one
+ * all read requests share the same poll interval, so use separate peripherals if you need different rates
+
+A port read section without a `url` still needs the peripheral to have one.
 
 ### Placeholders
 
