@@ -18,6 +18,10 @@ class GenericHTTPPort(polled.PolledPort):
         id: str,
         type: str = core_ports.TYPE_BOOLEAN,
         writable: bool | None = None,
+        min: float | None = None,
+        max: float | None = None,
+        integer: bool = False,
+        step: float | None = None,
         read: dict[str, Any] | None = None,
         write: dict[str, Any] | None = None,
         **kwargs,
@@ -41,8 +45,12 @@ class GenericHTTPPort(polled.PolledPort):
 
         super().__init__(id=id, **kwargs)
 
-        # These will directly determine the port type attribute
+        # These directly determine the matching port attributes
         self._type = type
+        self._min = min
+        self._max = max
+        self._integer = integer
+        self._step = step
         # A port with a write section is writable, unless told otherwise
         self._writable = writable if writable is not None else write is not None
 
