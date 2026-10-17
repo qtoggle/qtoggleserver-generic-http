@@ -22,7 +22,7 @@ peripherals = [
     {
         driver = "qtoggleserver.generichttp.GenericHTTPClient"
         name = "myperipheral"  # a name of your choice
-        read = {
+        read = {                                        # may be omitted, see below
             url = "https://api.example.com/myresource"
             method = GET  # default
             query = {
@@ -72,7 +72,7 @@ peripherals = [
             "port_id1" = {
                 type = boolean                # boolean or number
                 writable = true               # defaults to true if a port write section is given, false otherwise
-                read = {
+                read = {                      # may be omitted, see below
                     json_path = "/path/to/field"  # RFC6901 JSON pointer to port value, inside response body
                     body_regex = "myvalue=(\d+)"  # regular expression inside body for port value lookup
                     true_value = 1                # value or list of values that are true (for boolean ports)
@@ -89,6 +89,22 @@ peripherals = [
 ]
 ...
 ```
+
+### Reading without a read section
+
+Some HTTP integrations can't give a value back. Leave out the port `read` section for those. The port then reports the
+last value written to it. Before the first write, its value is unavailable. The last written value is remembered across
+restarts.
+
+Such ports can sit next to regular ones in the same peripheral. The peripheral keeps polling its read URL, the regular
+ports take their values from the response, and the read-less ones report what was last written to them.
+
+If no port needs reading, leave out the peripheral `read` section as well. Nothing is polled at all then. In that case:
+
+ * no port may have a read section
+ * `write.url` can no longer be inherited from `read.url`, so every writable port needs a write URL
+
+A port with no read section and no write section can neither be read nor written, so it is rejected.
 
 ### Placeholders
 
