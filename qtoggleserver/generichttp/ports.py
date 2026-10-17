@@ -28,6 +28,12 @@ class GenericHTTPPort(polled.PolledPort):
     ) -> None:
         self._write_details: dict[str, Any] = write or {}
 
+        # A port with a write section is writable, unless told otherwise
+        is_writable = writable if writable is not None else write is not None
+        if read is None and not is_writable:
+            # Check before the base class starts our write loop task, which nobody would stop
+            raise ValueError(f"Port {id} can neither be read nor written")
+
         # Some integrations can't give a value back, so a port without a read section simply reports the last written
         # value.
         self._has_read: bool = read is not None
@@ -51,11 +57,7 @@ class GenericHTTPPort(polled.PolledPort):
         self._max = max
         self._integer = integer
         self._step = step
-        # A port with a write section is writable, unless told otherwise
-        self._writable = writable if writable is not None else write is not None
-
-        if not self._has_read and not self._writable:
-            raise ValueError(f"Port {id} can neither be read nor written")
+        self._writable = is_writable
 
     def get_peripheral(self) -> GenericHTTPClient:
         return cast(GenericHTTPClient, super().get_peripheral())
