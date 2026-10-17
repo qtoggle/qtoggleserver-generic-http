@@ -96,7 +96,8 @@ class GenericHTTPClient(polled.PolledPeripheral):
     async def write_port_value(
         self, port: core_ports.BasePort, request_details: dict[str, Any], context: dict[str, Any]
     ) -> None:
-        details = request_details
+        # Work on a copy, so our write details don't get folded into the port's own ones
+        details = dict(request_details)
         for k, v in self.write_details.items():
             details.setdefault(k, v)
 

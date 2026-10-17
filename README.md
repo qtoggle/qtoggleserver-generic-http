@@ -71,7 +71,7 @@ peripherals = [
         ports = {
             "port_id1" = {
                 type = boolean                # boolean or number
-                writable = true               # defaults to false
+                writable = true               # defaults to true if a port write section is given, false otherwise
                 read = {
                     json_path = "/path/to/field"  # RFC6901 JSON pointer to port value, inside response body
                     body_regex = "myvalue=(\d+)"  # regular expression inside body for port value lookup
