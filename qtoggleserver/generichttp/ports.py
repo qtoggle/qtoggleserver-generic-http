@@ -39,9 +39,6 @@ class GenericHTTPPort(polled.PolledPort):
         self._has_read: bool = read is not None
         read = read or {}
 
-        # A port with an URL of its own reads from a response of its own
-        self._read_url: str | None = read.get("url")
-
         json_path = read.get("json_path")
         body_regex = read.get("body_regex")
         true_value = read.get("true_value", True)
@@ -81,7 +78,7 @@ class GenericHTTPPort(polled.PolledPort):
 
         client = self.get_peripheral()
 
-        response = client.get_last_response(self._read_url)
+        response = client.get_last_response(self.get_initial_id())
         if response is None:
             return None
 

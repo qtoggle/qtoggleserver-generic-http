@@ -123,9 +123,16 @@ A port with no read section that isn't writable can neither be read nor written,
 By default every port takes its value from the peripheral's read response. A port that needs another URL can put a
 `url` in its own read section. That port then gets a read request of its own, made on every poll.
 
-Ports naming the same URL share a single request. So does a port whose `url` is the peripheral's own read URL. The
-peripheral's read section supplies the defaults for `method`, `query`, `headers`, `cookies` and `request_body`, and the
-port's own values win.
+The peripheral's read section supplies the defaults for `method`, `query`, `headers`, `cookies` and `request_body`, and
+the port's own values win. Ports asking for the very same request share it, so one request is made per poll no matter
+how many ports read from it. Ports that differ in any of those details get a request each, even when the URL is the
+same.
+
+A port that only needs another `json_path` or `body_regex` adds no request at all. One that also sets its own `query`
+does.
+
+`write.url` is still inherited from the peripheral's `read.url`, never from the port's own. So give a write section its
+own `url` whenever the port reads from an URL of its own.
 
 When a read request fails, only the ports reading from that URL lose their value. The peripheral goes offline only when
 every read request fails.
@@ -181,7 +188,8 @@ case. If you need a pure integer value, just cast it to integer: `{{int(new_valu
 
 ### Port Value Readings
 
-Port values are read using the response to an HTTP request (one request for all defined ports). Intermediate
+Port values are read using the response to an HTTP request. One request serves all the ports that want the very same
+one, see [Reading from several URLs](#reading-from-several-urls). Intermediate
 _raw values_ are determined from the response and are coerced to the data types of the respective ports.
 
 A raw value is determined as follows:

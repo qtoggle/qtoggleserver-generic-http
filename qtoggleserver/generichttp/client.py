@@ -1,3 +1,4 @@
+import asyncio
 import dataclasses
 import logging
 import time
@@ -15,6 +16,9 @@ from qtoggleserver.utils import template as template_utils
 
 
 DEFAULT_TIMEOUT = 10  # seconds
+
+# Details that tell one read request from another
+READ_REQUEST_FIELDS = ["cookies", "headers", "method", "params", "query", "request_body", "url"]
 
 
 @dataclasses.dataclass
@@ -84,20 +88,23 @@ class GenericHTTPClient(polled.PolledPeripheral):
         self.timeout: int = timeout
         self.port_details: dict[str, dict[str, Any]] = ports
 
-        # Read requests by URL, so ports sharing an URL also share a single request per poll
+        # Only the read requests our ports actually need, keyed so that ports wanting the same one share it
         self.read_requests: dict[str, dict[str, Any]] = {}
-        if self.read_details is not None:
-            self.read_requests[self.read_details["url"]] = self.read_details
-        for details in ports.values():
-            port_read = details.get("read") or {}
-            url = port_read.get("url")
-            if url is not None and url not in self.read_requests:
-                # Our own read section supplies the defaults
-                request = {**(self.read_details or {}), **port_read}
-                request.setdefault("method", "GET")
-                self.read_requests[url] = request
+        self.port_read_keys: dict[str, str] = {}
+        for id_, details in ports.items():
+            port_read = details.get("read")
+            if port_read is None:
+                continue
+
+            # Our own read section supplies the defaults
+            request = {**(self.read_details or {}), **port_read}
+            request.setdefault("method", "GET")
+            key = self.make_read_key(request)
+            self.read_requests.setdefault(key, request)
+            self.port_read_keys[id_] = key
 
         self.last_responses: dict[str, Response] = {}
+        self.read_errors: dict[str, str] = {}
 
         super().__init__(**kwargs)
 
@@ -121,32 +128,55 @@ class GenericHTTPClient(polled.PolledPeripheral):
             "port_attrs": eval_context.port_attrs,
         }
 
-    def get_last_response(self, url: str | None) -> Response | None:
-        """Last response of the read request for `url`, or of our own read request when `url` is `None`."""
-        if url is None:
-            url = (self.read_details or {}).get("url")
+    @staticmethod
+    def make_read_key(details: dict[str, Any]) -> str:
+        """Identify a read request, so that ports wanting the very same one share it."""
+        return json_utils.dumps({f: details[f] for f in READ_REQUEST_FIELDS if f in details}, sort_keys=True)
 
-        return self.last_responses.get(url)
+    def get_last_response(self, port_id: str) -> Response | None:
+        """Last response of the read request made for the given port."""
+        key = self.port_read_keys.get(port_id)
+
+        return self.last_responses.get(key) if key is not None else None
 
     async def poll(self) -> None:
         if not self.read_requests:
             return
 
-        errors = []
+        keys = list(self.read_requests)
         async with aiohttp.ClientSession() as session:
             context = await self.get_common_context()
-            for url, details in self.read_requests.items():
-                try:
-                    self.last_responses[url] = await self.read_request(session, details, context)
-                except Exception as e:
-                    # One failing URL shouldn't hide the ports that read from the other ones
-                    self.error("read request to %s failed: %s", url, e, exc_info=True)
-                    self.last_responses.pop(url, None)
-                    errors.append(e)
+            results = await asyncio.gather(
+                *(self.read_request(session, self.read_requests[k], context) for k in keys), return_exceptions=True
+            )
+
+        errors = []
+        for key, result in zip(keys, results, strict=True):
+            if isinstance(result, BaseException):
+                if not isinstance(result, Exception):
+                    raise result  # cancellation and friends must not be swallowed
+
+                # One failing request shouldn't hide the ports that read from the other ones
+                self.log_read_error(key, result)
+                self.last_responses.pop(key, None)
+                errors.append(result)
+            else:
+                self.read_errors.pop(key, None)
+                self.last_responses[key] = result
 
         # Only give up when every read request failed
         if len(errors) == len(self.read_requests):
             raise errors[0]
+
+    def log_read_error(self, key: str, error: Exception) -> None:
+        """Log a failed read request, keeping a request that stays broken from flooding the log."""
+        url = self.read_requests[key]["url"]
+        message = str(error)
+        if self.read_errors.get(key) == message:
+            self.debug("read request to %s still failing: %s", url, message)
+        else:
+            self.read_errors[key] = message
+            self.error("read request to %s failed: %s", url, message, exc_info=error)
 
     async def read_request(
         self, session: aiohttp.ClientSession, details: dict[str, Any], context: dict[str, Any]
