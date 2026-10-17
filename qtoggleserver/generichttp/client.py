@@ -53,17 +53,6 @@ class GenericHTTPClient(polled.PolledPeripheral):
             if self.read_details.get("url") is None:
                 raise ValueError("The read section needs a URL")
             self.read_details.setdefault("method", "GET")
-        else:
-            without_url = [
-                id_
-                for id_, details in ports.items()
-                if details.get("read") is not None and details["read"].get("url") is None
-            ]
-            if without_url:
-                raise ValueError(
-                    f"Ports {', '.join(without_url)} have a read section without an URL, but the peripheral has no "
-                    f"read section to take one from"
-                )
 
         self.write_details: dict[str, Any] = write or {}
         if self.read_details is not None:
@@ -88,9 +77,12 @@ class GenericHTTPClient(polled.PolledPeripheral):
         self.timeout: int = timeout
         self.port_details: dict[str, dict[str, Any]] = ports
 
-        # Only the read requests our ports actually need, keyed so that ports wanting the same one share it
+        # Read requests, keyed so that ports wanting the very same one share it
         self.read_requests: dict[str, dict[str, Any]] = {}
         self.port_read_keys: dict[str, str] = {}
+        if self.read_details is not None:
+            # Keep our own request even when no port reads from it, as it tells us whether the device is still there
+            self.read_requests[self.make_read_key(self.read_details)] = self.read_details
         for id_, details in ports.items():
             port_read = details.get("read")
             if port_read is None:
@@ -99,6 +91,9 @@ class GenericHTTPClient(polled.PolledPeripheral):
             # Our own read section supplies the defaults
             request = {**(self.read_details or {}), **port_read}
             request.setdefault("method", "GET")
+            if request.get("url") is None:
+                raise ValueError(f"Port {id_} has a read section without an URL and there is none to inherit")
+
             key = self.make_read_key(request)
             self.read_requests.setdefault(key, request)
             self.port_read_keys[id_] = key
@@ -150,23 +145,33 @@ class GenericHTTPClient(polled.PolledPeripheral):
                 *(self.read_request(session, self.read_requests[k], context) for k in keys), return_exceptions=True
             )
 
-        errors = []
+        errors: dict[str, Exception] = {}
+        cancellations: list[BaseException] = []
         for key, result in zip(keys, results, strict=True):
-            if isinstance(result, BaseException):
-                if not isinstance(result, Exception):
-                    raise result  # cancellation and friends must not be swallowed
-
-                # One failing request shouldn't hide the ports that read from the other ones
-                self.log_read_error(key, result)
+            if isinstance(result, Exception):
+                errors[key] = result
                 self.last_responses.pop(key, None)
-                errors.append(result)
+            elif isinstance(result, BaseException):
+                cancellations.append(result)
             else:
                 self.read_errors.pop(key, None)
                 self.last_responses[key] = result
 
-        # Only give up when every read request failed
+        # Cancellation and friends must not be swallowed, but the responses we did get are still worth keeping
+        if cancellations:
+            raise cancellations[0]
+
         if len(errors) == len(self.read_requests):
-            raise errors[0]
+            # Nothing could be read, so fail the poll and let it take us offline. The poll loop logs the error, so
+            # there's no point in logging each one here as well.
+            if len(errors) == 1:
+                raise next(iter(errors.values()))
+
+            raise ExceptionGroup("every read request failed", list(errors.values()))
+
+        # One failing request shouldn't hide the ports that read from the other ones
+        for key, error in errors.items():
+            self.log_read_error(key, error)
 
     def log_read_error(self, key: str, error: Exception) -> None:
         """Log a failed read request, keeping a request that stays broken from flooding the log."""

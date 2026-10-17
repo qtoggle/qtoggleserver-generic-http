@@ -134,6 +134,9 @@ does.
 `write.url` is still inherited from the peripheral's `read.url`, never from the port's own. So give a write section its
 own `url` whenever the port reads from an URL of its own.
 
+The peripheral's own read request is made on every poll even when no port reads from it. That way the peripheral still
+notices when the device stops answering.
+
 When a read request fails, only the ports reading from that URL lose their value. The peripheral goes offline only when
 every read request fails.
 
