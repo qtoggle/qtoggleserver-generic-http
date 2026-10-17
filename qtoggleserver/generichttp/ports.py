@@ -17,7 +17,7 @@ class GenericHTTPPort(polled.PolledPort):
         *,
         id: str,
         type: str = core_ports.TYPE_BOOLEAN,
-        writable: bool = False,
+        writable: bool | None = None,
         read: dict[str, Any],
         write: dict[str, Any] | None = None,
         **kwargs,
@@ -38,7 +38,8 @@ class GenericHTTPPort(polled.PolledPort):
 
         # These will directly determine the port type attribute
         self._type = type
-        self._writable = writable
+        # A port with a write section is writable, unless told otherwise
+        self._writable = writable if writable is not None else write is not None
 
     def get_peripheral(self) -> GenericHTTPClient:
         return cast(GenericHTTPClient, super().get_peripheral())
