@@ -24,7 +24,7 @@ class GenericHTTPClient(polled.PolledPeripheral):
     def __init__(
         self,
         *,
-        read: dict[str, Any],
+        read: dict[str, Any] | None = None,
         write: dict[str, Any] | None = None,
         auth: dict[str, Any] | None = None,
         ignore_response_code: bool = False,
@@ -33,12 +33,32 @@ class GenericHTTPClient(polled.PolledPeripheral):
         ports: dict[str, dict[str, Any]],
         **kwargs,
     ) -> None:
-        self.read_details: dict[str, Any] = read
-        self.read_details.setdefault("method", "GET")
+        # Without a read section we never poll, so all our ports have to be write-only
+        self.read_details: dict[str, Any] | None = read
+        if self.read_details is not None:
+            if self.read_details.get("url") is None:
+                raise ValueError("The read section needs a URL")
+            self.read_details.setdefault("method", "GET")
+        else:
+            with_read = [id_ for id_, details in ports.items() if details.get("read") is not None]
+            if with_read:
+                raise ValueError(f"Ports {', '.join(with_read)} have a read section, but the peripheral has none")
 
         self.write_details: dict[str, Any] = write or {}
-        self.write_details.setdefault("url", self.read_details.get("url"))
+        if self.read_details is not None:
+            self.write_details.setdefault("url", self.read_details["url"])
         self.write_details.setdefault("method", "POST")
+
+        if self.write_details.get("url") is None:
+            # No URL to inherit, so every port that can be written needs one of its own
+            without_url = [
+                id_
+                for id_, details in ports.items()
+                if (details.get("write") is not None or details.get("writable"))
+                and details.get("write", {}).get("url") is None
+            ]
+            if without_url:
+                raise ValueError(f"Ports {', '.join(without_url)} need a write URL")
 
         self.auth: dict[str, str] = auth or {}
         self.auth.setdefault("type", "none")
@@ -75,6 +95,9 @@ class GenericHTTPClient(polled.PolledPeripheral):
         }
 
     async def poll(self) -> None:
+        if self.read_details is None:
+            return
+
         self.debug("read request %s %s", self.read_details["method"], self.read_details["url"])
 
         async with aiohttp.ClientSession() as session:

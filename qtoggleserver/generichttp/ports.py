@@ -46,12 +46,15 @@ class GenericHTTPPort(polled.PolledPort):
         # A port with a write section is writable, unless told otherwise
         self._writable = writable if writable is not None else write is not None
 
+        if not self._has_read and not self._writable:
+            raise ValueError(f"Port {id} can neither be read nor written")
+
     def get_peripheral(self) -> GenericHTTPClient:
         return cast(GenericHTTPClient, super().get_peripheral())
 
     async def read_value(self) -> NullablePortValue:
         if not self._has_read:
-            return self.get_last_written_value()
+            return self.adapt_value_type(self.get_last_written_value())
 
         client = self.get_peripheral()
 
