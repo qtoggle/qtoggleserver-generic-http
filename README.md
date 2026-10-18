@@ -202,16 +202,32 @@ For example, following request body will send the new value in a dictionary fiel
         "value": "{{new_value}}"
     }
 
-All builtin Python functions are available to be used inside the placeholder expression. For more details, see the
-[Jinja2 Template Designer Docs](https://jinja.palletsprojects.com/en/2.11.x/templates/).
+Placeholders are Jinja2 expressions, so you can use Jinja2
+[filters](https://jinja.palletsprojects.com/en/3.1.x/templates/#builtin-filters) inside them. Python builtins such as
+`int()` or `str()` are not available.
 
-Template strings containing placeholders must be enclosed in quotes. However, their final value will not be surrounded
-by quotes unless it's a string itself. If you really want quotes around your placeholder's real value, you can simply
-ensure that the final value is a string, by passing it to the builtin Python function `str` (e.g. `{{str(new_value)}}`).
+A field that holds nothing but a placeholder keeps the type of its value. So `"{{new_value}}"` is sent as a number,
+not as a string, even though the template is written in quotes. A field that mixes text and placeholders, such as
+`"level {{new_value}}"`, is sent as a string.
 
-Another important note is that numeric port values are most often represented internally by a floating-point datatype,
-even when the actual value has no decimals (e.g. `3.0`). So `{{new_value}}` would result in `3.0` instead of `3` in this
-case. If you need a pure integer value, just cast it to integer: `{{int(new_value)}}`.
+Number port values are often floats, even when they have no decimals. So `"{{new_value}}"` may send `3.0` instead of
+`3`. To send an integer, use the `int` filter:
+
+    request_body = {
+        "color": "{{new_value|int}}"  # sends 3
+    }
+
+`int` drops the decimals, so `2.7` becomes `2`. Use `"{{new_value|round|int}}"` to round to the nearest integer
+instead.
+
+To send a value as a quoted string, convert it with `string` and then with `tojson`:
+
+    request_body = {
+        "color": "{{new_value|int|string|tojson}}"  # sends "3"
+    }
+
+`string` alone is not enough. A field that holds nothing but a placeholder gets turned back into a number when its
+text looks like one.
 
 ### Port Value Readings
 
