@@ -62,6 +62,14 @@ class GenericHTTPPort(polled.PolledPort):
     def get_peripheral(self) -> GenericHTTPClient:
         return cast(GenericHTTPClient, super().get_peripheral())
 
+    async def read_transformed_value(self) -> NullablePortValue:
+        # Without a read section, the last written value is reported as is: it's already a value from before the
+        # write transform, so the read transform doesn't apply
+        if not self._has_read:
+            return self.get_last_written_value()
+
+        return await super().read_transformed_value()
+
     async def read_value(self) -> NullablePortValue:
         value = await self._read_value()
 
@@ -73,9 +81,6 @@ class GenericHTTPPort(polled.PolledPort):
         return value
 
     async def _read_value(self) -> NullablePortValue:
-        if not self._has_read:
-            return self.get_last_written_value()
-
         client = self.get_peripheral()
 
         response = client.get_last_response(self.get_initial_id())
