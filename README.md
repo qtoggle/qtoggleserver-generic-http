@@ -73,6 +73,7 @@ peripherals = [
                 type = boolean                # boolean or number
                 writable = true               # defaults to true if a port write section is given, false otherwise
                 read = {                      # may be omitted, see below
+                    url = "https://api.example.com/other"  # own read request for this port, see below
                     json_path = "/path/to/field"  # RFC6901 JSON pointer to port value, inside response body
                     body_regex = "myvalue=(\d+)"  # regular expression inside body for port value lookup
                     true_value = 1                # value or list of values that are true (for boolean ports)
@@ -109,12 +110,66 @@ restarts.
 Such ports can sit next to regular ones in the same peripheral. The peripheral keeps polling its read URL, the regular
 ports take their values from the response, and the read-less ones report what was last written to them.
 
-If no port needs reading, leave out the peripheral `read` section as well. Nothing is polled at all then. In that case:
+You can leave out the peripheral `read` section as well. Then nothing is polled, except the URLs the ports bring
+themselves. In that case:
 
- * no port may have a read section
+ * every port read section needs an `url` of its own
  * `write.url` can no longer be inherited from `read.url`, so every writable port needs a write URL
 
 A port with no read section that isn't writable can neither be read nor written, so it is rejected.
+
+### Reading from several URLs
+
+By default every port takes its value from the peripheral's read response. A port that needs another URL can put a
+`url` in its own read section. That port then gets a read request of its own, made on every poll.
+
+The peripheral's read section supplies the defaults for `method`, `query`, `params`, `headers`, `cookies` and
+`request_body`, and the port's own values win. A port value replaces the inherited one whole, so a port setting its own
+`headers` gets none of the peripheral's. Writes work the same way. Ports asking for the very same request share it, so
+one request is made per poll no matter how many ports read from it. Ports that differ in any of those details get a
+request each, even when the URL is the same.
+
+A port that only needs another `json_path` or `body_regex` adds no request at all. One that also sets its own `query`
+does. Set an inherited value to `null` to drop it, for example `request_body = null` for a port that reads with `GET`.
+This works in write sections too. Dropping `method` brings back the default: `GET` for reads, `POST` for writes. In the
+same way, dropping `url` in the peripheral's write section brings back its `read.url`. Only without a peripheral read
+section does every writable port have to bring a write URL of its own.
+
+`write.url` is still inherited from the peripheral's `read.url`, never from the port's own. So give a write section its
+own `url` whenever the port reads from an URL of its own.
+
+The peripheral's own read request is made on every poll even when no port reads from it. When every port is
+write-only, it is the only request, so it is what takes the peripheral offline once the device stops answering.
+
+When a read request fails, only the ports reading from it are affected. They keep their last value for as many failures
+in a row as `retry_count` allows (none by default), and then lose it. The peripheral goes offline only when every read
+request fails. While others still work, a failing request is retried on the normal poll interval, not on
+`retry_poll_interval`.
+
+After a port is written, only the read request of that port is made again. Ports reading from other requests catch up
+on the next poll. If that request fails, the port keeps its value until the next poll.
+
+A read request may use the placeholders that belong to a port: `port`, `value` and `attrs`. It is then made once for
+every port reading from it, with that port's own values. So a single peripheral read section can serve many ports:
+
+``` ini
+read = {
+    url = "https://api.example.com/{{port.get_initial_id()}}"
+}
+ports = {
+    "phases" = { type = number, read = { json_path = "/value" } }  # reads /phases
+    "current" = { type = number, read = { json_path = "/value" } }  # reads /current
+}
+```
+
+`port.get_initial_id()` gives the port id as written in the config. `port.get_id()` puts the peripheral name in front of
+it. Mind the spelling: a port has no `id`, and `{{port.id}}` gives an empty string rather than an error.
+
+A peripheral read section that uses those placeholders can't be made without a port, so it isn't polled on its own.
+
+All read requests share the same poll interval, so use separate peripherals if you need different rates.
+
+A port read section without a `url` still needs the peripheral to have one.
 
 ### Placeholders
 
@@ -160,7 +215,8 @@ case. If you need a pure integer value, just cast it to integer: `{{int(new_valu
 
 ### Port Value Readings
 
-Port values are read using the response to an HTTP request (one request for all defined ports). Intermediate
+Port values are read using the response to an HTTP request. One request serves all the ports that want the very same
+one, see [Reading from several URLs](#reading-from-several-urls). Intermediate
 _raw values_ are determined from the response and are coerced to the data types of the respective ports.
 
 A raw value is determined as follows:
