@@ -1,6 +1,7 @@
 ## About
 
 This is an addon for [qToggleServer](https://github.com/qtoggle/qtoggleserver).
+It needs qToggleServer 0.37 or newer.
 
 It provides ports that are backed by configurable HTTP requests.
 
@@ -108,8 +109,7 @@ last value written to it. Before the first write, its value is unavailable. The 
 restarts.
 
 The reported value is the one given to the port, before any `transform_write`. So `transform_read` doesn't apply to such
-ports. This needs a qToggleServer version where the last written value is kept from before the write transform; older
-versions report the transformed value.
+ports.
 
 Such ports can sit next to regular ones in the same peripheral. The peripheral keeps polling its read URL, the regular
 ports take their values from the response, and the read-less ones report what was last written to them.
@@ -187,14 +187,16 @@ Any of the following fields may be given as templates containing _placeholders_:
  * `request_body`
 
 The following context variables are recognized when replacing placeholders:
- * `value` - the current port value
+ * `value` - the last value read from the port
  * `new_value` - the new port value, available only when writing a value to port
  * `port` - the port itself
  * `attrs` - a dictionary with current port's attributes
  * `device_attrs` - a dictionary with device attributes (slave devices are referenced using `<slave_name>:<attr_name>`
    prefix)
  * `port_attrs` - a dictionary indexed by port id, containing current attributes of each port
- * `port_values` - a dictionary indexed by port id, containing current value of each port
+ * `port_values` - a dictionary indexed by port id, containing the last value of each port, as in expressions
+ * `port_read_values` - a dictionary indexed by port id, containing the last read value of each port
+ * `port_written_values` - a dictionary indexed by port id, containing the last written value of each port
  * `metadata` - a dictionary with all the metadata catalog entries
  
 Complex data structures containing lists or dictionaries will be parsed recursively and placeholders will be replaced
