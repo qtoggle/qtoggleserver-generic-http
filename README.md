@@ -109,8 +109,7 @@ last value written to it. Before the first write, its value is unavailable. The 
 restarts.
 
 The reported value is the one given to the port, before any `transform_write`. So `transform_read` doesn't apply to such
-ports. This needs a qToggleServer version where the last written value is kept from before the write transform; older
-versions report the transformed value.
+ports.
 
 Such ports can sit next to regular ones in the same peripheral. The peripheral keeps polling its read URL, the regular
 ports take their values from the response, and the read-less ones report what was last written to them.
