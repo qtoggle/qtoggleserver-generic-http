@@ -152,6 +152,8 @@ class GenericHTTPClient(polled.PolledPeripheral):
             "metadata": metadata.get_all(),
             "device_attrs": eval_context.device_attrs,
             "port_values": eval_context.port_values,
+            "port_read_values": eval_context.port_read_values,
+            "port_written_values": eval_context.port_written_values,
             "port_attrs": eval_context.port_attrs,
         }
 
